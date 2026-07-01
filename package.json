@@ -13,12 +13,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/livinggodecosystem/lgc-contracts/issues"
   },
   "homepage": "https://github.com/livinggodecosystem/lgc-contracts#readme",
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",
     "hardhat": "^3.9.0"
   }
 }
