@@ -1,5 +1,7 @@
-import { defineConfig } from "hardhat/config";
+require("@nomicfoundation/hardhat-toolbox");
 
-export default defineConfig({
+/** @type import('hardhat/config').HardhatUserConfig */
+
+module.exports = {
   solidity: "0.8.30",
-});
+};
