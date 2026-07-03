@@ -4,13 +4,14 @@ pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title Living God Coin Treasury
 /// @author Living God Ecosystem
 /// @notice Manages the treasury allocations for the Living God Ecosystem.
 /// @dev Holds LGC tokens and distributes them according to approved allocations.
 
-contract LGCTreasury is Ownable {
+contract LGCTreasury is Ownable, Pausable  {
 
     using SafeERC20 for IERC20;
 
@@ -74,10 +75,32 @@ contract LGCTreasury is Ownable {
     address indexed newWallet
 );
 
+    event RecoveredToken(
+    address indexed token,
+    address indexed recipient,
+    uint256 amount
+);
+
 /// @notice Ensures a wallet address is valid.
 modifier validAddress(address newWallet) {
     require(newWallet != address(0), "Invalid wallet");
     _;
+}
+
+/// @notice Pause the treasury in case of emergency.
+function pause()
+    external
+    onlyOwner
+{
+    _pause();
+}
+
+/// @notice Resume treasury operations.
+function unpause()
+    external
+    onlyOwner
+{
+    _unpause();
 }
 
     constructor(
@@ -209,6 +232,7 @@ function updateTeamWallet(address newWallet)
 function distributeEcosystem(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         ecosystemDistributed + amount <= ECOSYSTEM_ALLOCATION,
@@ -238,6 +262,7 @@ function distributeEcosystem(uint256 amount)
 function distributeCommunity(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         communityDistributed + amount <= COMMUNITY_ALLOCATION,
@@ -266,6 +291,7 @@ function distributeCommunity(uint256 amount)
 function distributeLiquidity(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         liquidityDistributed + amount <= LIQUIDITY_ALLOCATION,
@@ -295,6 +321,7 @@ function distributeLiquidity(uint256 amount)
 function distributeDevelopment(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         developmentDistributed + amount <= DEVELOPMENT_ALLOCATION,
@@ -324,6 +351,7 @@ function distributeDevelopment(uint256 amount)
 function distributeReserve(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         reserveDistributed + amount <= RESERVE_ALLOCATION,
@@ -353,6 +381,7 @@ function distributeReserve(uint256 amount)
 function distributeTeam(uint256 amount)
     external
     onlyOwner
+     whenNotPaused
 {
     require(
         teamDistributed + amount <= TEAM_ALLOCATION,
@@ -375,6 +404,60 @@ function distributeTeam(uint256 amount)
     );
 
     
+}
+
+/// @notice Returns the remaining Ecosystem allocation.
+function remainingEcosystemAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return ECOSYSTEM_ALLOCATION - ecosystemDistributed;
+}
+
+/// @notice Returns the remaining Community allocation.
+function remainingCommunityAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return COMMUNITY_ALLOCATION - communityDistributed;
+}
+
+/// @notice Returns the remaining Liquidity allocation.
+function remainingLiquidityAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return LIQUIDITY_ALLOCATION - liquidityDistributed;
+}
+
+/// @notice Returns the remaining Development allocation.
+function remainingDevelopmentAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return DEVELOPMENT_ALLOCATION - developmentDistributed;
+}
+
+/// @notice Returns the remaining Reserve allocation.
+function remainingReserveAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return RESERVE_ALLOCATION - reserveDistributed;
+}
+
+/// @notice Returns the remaining Team allocation.
+function remainingTeamAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return TEAM_ALLOCATION - teamDistributed;
 }
 
 /// @notice Returns remaining Ecosystem allocation.
@@ -438,5 +521,72 @@ function treasuryBalance()
     returns (uint256)
 {
     return lgcToken.balanceOf(address(this));
+}
+
+/// @notice Recovers ERC20 tokens accidentally sent to the treasury.
+/// @dev Living God Coin itself cannot be recovered.
+/// @param token ERC20 token address.
+/// @param recipient Recipient of recovered tokens.
+/// @param amount Amount to recover.
+function recoverERC20(
+    IERC20 token,
+    address recipient,
+    uint256 amount
+)
+    external
+    onlyOwner
+    validAddress(recipient)
+{
+    require(
+        address(token) != address(lgcToken),
+        "Cannot recover LGC"
+    );
+
+    token.safeTransfer(
+        recipient,
+        amount
+    );
+
+    emit RecoveredToken(
+        address(token),
+        recipient,
+        amount
+    );
+}
+
+/// -----------------------------------------------------------------------
+/// Dashboard Functions
+/// -----------------------------------------------------------------------
+
+
+
+/// @notice Returns the total amount distributed across all allocations.
+function totalDistributed()
+    public
+    view
+    returns (uint256)
+{
+    return
+        ecosystemDistributed +
+        communityDistributed +
+        liquidityDistributed +
+        developmentDistributed +
+        reserveDistributed +
+        teamDistributed;
+}
+
+/// @notice Returns the total remaining allocation.
+function totalRemainingAllocation()
+    public
+    view
+    returns (uint256)
+{
+    return
+        remainingEcosystemAllocation() +
+        remainingCommunityAllocation() +
+        remainingLiquidityAllocation() +
+        remainingDevelopmentAllocation() +
+        remainingReserveAllocation() +
+        remainingTeamAllocation();
 }
 }

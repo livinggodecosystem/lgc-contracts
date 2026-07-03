@@ -13,7 +13,7 @@ describe("LGCTreasury", function () {
 
     let lgc;
     let treasury;
-
+    let mockToken;
     beforeEach(async function () {
 
         [
@@ -31,6 +31,12 @@ describe("LGCTreasury", function () {
         lgc = await LivingGodCoin.deploy();
 
         await lgc.waitForDeployment();
+
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+
+mockToken = await MockERC20.deploy();
+
+await mockToken.waitForDeployment();
 
         const LGCTreasury = await ethers.getContractFactory("LGCTreasury");
 
@@ -1162,6 +1168,166 @@ it("Treasury balance should decrease after token distributions", async function 
     ).to.equal(
         ethers.parseEther("850000")
     );
+
+});
+
+it("Should recover accidentally sent ERC20 tokens", async function () {
+
+    const amount = ethers.parseEther("1000");
+
+    await mockToken.transfer(
+        await treasury.getAddress(),
+        amount
+    );
+
+    await treasury.recoverERC20(
+        await mockToken.getAddress(),
+        owner.address,
+        amount
+    );
+
+    expect(
+        await mockToken.balanceOf(owner.address)
+    ).to.equal(
+        ethers.parseEther("1000000")
+    );
+
+});
+
+it("Should not allow a non-owner to recover ERC20 tokens", async function () {
+
+    await expect(
+
+        treasury
+            .connect(addr1)
+            .recoverERC20(
+                await mockToken.getAddress(),
+                addr1.address,
+                ethers.parseEther("100")
+            )
+
+    ).to.be.reverted;
+
+});
+
+it("Should not allow recovery of LGC", async function () {
+
+    await expect(
+
+        treasury.recoverERC20(
+            await lgc.getAddress(),
+            owner.address,
+            ethers.parseEther("100")
+        )
+
+    ).to.be.revertedWith(
+        "Cannot recover LGC"
+    );
+
+});
+
+it("Should emit RecoveredToken event", async function () {
+
+    const amount = ethers.parseEther("500");
+
+    await mockToken.transfer(
+        await treasury.getAddress(),
+        amount
+    );
+
+    await expect(
+
+        treasury.recoverERC20(
+            await mockToken.getAddress(),
+            owner.address,
+            amount
+        )
+
+    )
+        .to.emit(treasury, "RecoveredToken")
+        .withArgs(
+            await mockToken.getAddress(),
+            owner.address,
+            amount
+        );
+
+});
+
+it("Should recover another ERC20 token", async function () {
+
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+
+    const mock = await MockERC20.deploy();
+
+    await mock.waitForDeployment();
+
+    const amount = ethers.parseEther("500");
+
+    await mock.transfer(
+        await treasury.getAddress(),
+        amount
+    );
+
+    await treasury.recoverERC20(
+        await mock.getAddress(),
+        owner.address,
+        amount
+    );
+
+    expect(
+        await mock.balanceOf(owner.address)
+    ).to.equal(
+        ethers.parseEther("1000000")
+    );
+
+});
+
+it("Should reject recovering LGC", async function () {
+
+    await expect(
+
+        treasury.recoverERC20(
+            await lgc.getAddress(),
+            owner.address,
+            100
+        )
+
+    ).to.be.revertedWith(
+        "Cannot recover LGC"
+    );
+
+});
+
+it("Should emit RecoveredToken event", async function () {
+
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+
+    const mock = await MockERC20.deploy();
+
+    await mock.waitForDeployment();
+
+    const amount = ethers.parseEther("250");
+
+    await mock.transfer(
+        await treasury.getAddress(),
+        amount
+    );
+
+    await expect(
+
+        treasury.recoverERC20(
+            await mock.getAddress(),
+            owner.address,
+            amount
+        )
+
+    )
+        .to.emit(treasury, "RecoveredToken")
+        .withArgs(
+            await mock.getAddress(),
+            owner.address,
+            amount
+        );
 
 });
 });
