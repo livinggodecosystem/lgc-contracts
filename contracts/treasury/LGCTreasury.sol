@@ -460,59 +460,6 @@ function remainingTeamAllocation()
     return TEAM_ALLOCATION - teamDistributed;
 }
 
-/// @notice Returns remaining Ecosystem allocation.
-function ecosystemRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return ECOSYSTEM_ALLOCATION - ecosystemDistributed;
-}
-
-/// @notice Returns remaining Community allocation.
-function communityRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return COMMUNITY_ALLOCATION - communityDistributed;
-}
-
-/// @notice Returns remaining Liquidity allocation.
-function liquidityRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return LIQUIDITY_ALLOCATION - liquidityDistributed;
-}
-
-/// @notice Returns remaining Development allocation.
-function developmentRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return DEVELOPMENT_ALLOCATION - developmentDistributed;
-}
-
-/// @notice Returns remaining Reserve allocation.
-function reserveRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return RESERVE_ALLOCATION - reserveDistributed;
-}
-
-/// @notice Returns remaining Team allocation.
-function teamRemaining()
-    public
-    view
-    returns (uint256)
-{
-    return TEAM_ALLOCATION - teamDistributed;
-}
 
 /// @notice Returns the current LGC balance held by the treasury.
 function treasuryBalance()
@@ -588,5 +535,93 @@ function totalRemainingAllocation()
         remainingDevelopmentAllocation() +
         remainingReserveAllocation() +
         remainingTeamAllocation();
+}
+
+/// @notice Returns the percentage of Ecosystem allocation distributed.
+function ecosystemProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (ecosystemDistributed * 100) / ECOSYSTEM_ALLOCATION;
+}
+
+/// @notice Returns the percentage of Community allocation distributed.
+function communityProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (communityDistributed * 100) / COMMUNITY_ALLOCATION;
+}
+
+/// @notice Returns the percentage of Liquidity allocation distributed.
+function liquidityProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (liquidityDistributed * 100) / LIQUIDITY_ALLOCATION;
+}
+
+/// @notice Returns the percentage of Development allocation distributed.
+function developmentProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (developmentDistributed * 100) / DEVELOPMENT_ALLOCATION;
+}
+
+/// @notice Returns the percentage of Reserve allocation distributed.
+function reserveProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (reserveDistributed * 100) / RESERVE_ALLOCATION;
+}
+
+/// @notice Returns the percentage of Team allocation distributed.
+function teamProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (teamDistributed * 100) / TEAM_ALLOCATION;
+}
+
+
+
+/// @notice Returns the total treasury allocation.
+function totalAllocation()
+    public
+    pure
+    returns (uint256)
+{
+    return
+        ECOSYSTEM_ALLOCATION +
+        COMMUNITY_ALLOCATION +
+        LIQUIDITY_ALLOCATION +
+        DEVELOPMENT_ALLOCATION +
+        RESERVE_ALLOCATION +
+        TEAM_ALLOCATION;
+}
+
+function distributionPercentage()
+    public
+    view
+    returns (uint256)
+{
+    return (totalDistributed() * 100) / totalAllocation();
+}
+
+/// @notice Returns whether the treasury still holds LGC.
+function hasTreasuryBalance()
+    public
+    view
+    returns (bool)
+{
+    return treasuryBalance() > 0;
 }
 }

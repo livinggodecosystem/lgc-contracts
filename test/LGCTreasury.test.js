@@ -832,7 +832,7 @@ it("Should return the correct remaining Ecosystem allocation", async function ()
     await treasury.distributeEcosystem(amount);
 
     expect(
-        await treasury.ecosystemRemaining()
+        await treasury.remainingEcosystemAllocation()
     ).to.equal(
         ethers.parseEther("4400000")
     );
@@ -853,7 +853,7 @@ it("Should return the correct remaining Community allocation", async function ()
     await treasury.distributeCommunity(amount);
 
     expect(
-        await treasury.communityRemaining()
+        await treasury.remainingCommunityAllocation()
     ).to.equal(
         ethers.parseEther("2900000")
     );
@@ -873,7 +873,7 @@ it("Should return the correct remaining Liquidity allocation", async function ()
     await treasury.distributeLiquidity(amount);
 
     expect(
-        await treasury.liquidityRemaining()
+        await treasury.remainingLiquidityAllocation()
     ).to.equal(
         ethers.parseEther("2150000")
     );
@@ -894,7 +894,7 @@ it("Should return the correct remaining Development allocation", async function 
     await treasury.distributeDevelopment(amount);
 
     expect(
-        await treasury.developmentRemaining()
+        await treasury.remainingDevelopmentAllocation()
     ).to.equal(
         ethers.parseEther("2150000")
     );
@@ -915,7 +915,7 @@ it("Should return the correct remaining Reserve allocation", async function () {
     await treasury.distributeReserve(amount);
 
     expect(
-        await treasury.reserveRemaining()
+        await treasury.remainingReserveAllocation()
     ).to.equal(
         ethers.parseEther("1400000")
     );
@@ -936,7 +936,7 @@ it("Should return the correct remaining Team allocation", async function () {
     await treasury.distributeTeam(amount);
 
     expect(
-        await treasury.teamRemaining()
+        await treasury.remainingTeamAllocation()
     ).to.equal(
         ethers.parseEther("1400000")
     );
@@ -967,7 +967,7 @@ it("Should correctly track remaining allocation after multiple Ecosystem distrib
     );
 
     expect(
-        await treasury.ecosystemRemaining()
+        await treasury.remainingEcosystemAllocation()
     ).to.equal(
         ethers.parseEther("4200000")
     );
@@ -991,7 +991,7 @@ it("Distributed + Remaining should always equal Ecosystem allocation", async fun
         await treasury.ecosystemDistributed();
 
     const remaining =
-        await treasury.ecosystemRemaining();
+        await treasury.remainingEcosystemAllocation();
 
     expect(
         distributed + remaining
@@ -1031,13 +1031,13 @@ it("Different allocations should remain independent", async function () {
     );
 
     expect(
-        await treasury.ecosystemRemaining()
+        await treasury.remainingEcosystemAllocation()
     ).to.equal(
         ethers.parseEther("4400000")
     );
 
     expect(
-        await treasury.communityRemaining()
+        await treasury.remainingCommunityAllocation()
     ).to.equal(
         ethers.parseEther("2800000")
     );
@@ -1064,7 +1064,7 @@ it("Should allow distributing the entire Ecosystem allocation", async function (
     );
 
     expect(
-        await treasury.ecosystemRemaining()
+        await treasury.remainingEcosystemAllocation()
     ).to.equal(0);
 
 });
@@ -1329,5 +1329,65 @@ it("Should emit RecoveredToken event", async function () {
             amount
         );
 
+});
+
+it("Should return the correct total allocation", async function () {
+
+    const total =
+        ethers.parseEther("4500000") +
+        ethers.parseEther("3000000") +
+        ethers.parseEther("2250000") +
+        ethers.parseEther("2250000") +
+        ethers.parseEther("1500000") +
+        ethers.parseEther("1500000");
+
+    expect(
+        await treasury.totalAllocation()
+    ).to.equal(total);
+
+});
+
+it("Should return 0% distribution initially", async function () {
+    expect(
+        await treasury.distributionPercentage()
+    ).to.equal(0);
+});
+
+it("Should correctly calculate distribution percentage", async function () {
+
+    await lgc.transfer(
+    treasury.target,
+    ethers.parseEther("4500000")
+);
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("450000")
+    );
+
+    const expected =
+        (450000n * 100n) / 15000000n;
+
+    expect(
+        await treasury.distributionPercentage()
+    ).to.equal(expected);
+});
+
+it("Should return true when treasury has balance", async function () {
+
+    await lgc.transfer(
+    treasury.target,
+    ethers.parseEther("100")
+);
+
+    expect(
+        await treasury.hasTreasuryBalance()
+    ).to.equal(true);
+});
+
+it("Should return false when treasury has no balance", async function () {
+
+    expect(
+        await treasury.hasTreasuryBalance()
+    ).to.equal(false);
 });
 });
