@@ -376,4 +376,67 @@ function distributeTeam(uint256 amount)
 
     
 }
+
+/// @notice Returns remaining Ecosystem allocation.
+function ecosystemRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return ECOSYSTEM_ALLOCATION - ecosystemDistributed;
+}
+
+/// @notice Returns remaining Community allocation.
+function communityRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return COMMUNITY_ALLOCATION - communityDistributed;
+}
+
+/// @notice Returns remaining Liquidity allocation.
+function liquidityRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return LIQUIDITY_ALLOCATION - liquidityDistributed;
+}
+
+/// @notice Returns remaining Development allocation.
+function developmentRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return DEVELOPMENT_ALLOCATION - developmentDistributed;
+}
+
+/// @notice Returns remaining Reserve allocation.
+function reserveRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return RESERVE_ALLOCATION - reserveDistributed;
+}
+
+/// @notice Returns remaining Team allocation.
+function teamRemaining()
+    public
+    view
+    returns (uint256)
+{
+    return TEAM_ALLOCATION - teamDistributed;
+}
+
+/// @notice Returns the current LGC balance held by the treasury.
+function treasuryBalance()
+    public
+    view
+    returns (uint256)
+{
+    return lgcToken.balanceOf(address(this));
+}
 }
