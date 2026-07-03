@@ -1,0 +1,379 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
+/// @title Living God Coin Treasury
+/// @author Living God Ecosystem
+/// @notice Manages the treasury allocations for the Living God Ecosystem.
+/// @dev Holds LGC tokens and distributes them according to approved allocations.
+
+contract LGCTreasury is Ownable {
+
+    using SafeERC20 for IERC20;
+
+    /// @notice Living God Coin token contract
+    IERC20 public immutable lgcToken;
+
+        /// -----------------------------------------------------------------------
+    /// Treasury Allocations
+    /// -----------------------------------------------------------------------
+
+
+    uint256 public constant ECOSYSTEM_ALLOCATION = 4_500_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_ALLOCATION = 3_000_000 * 10 ** 18;
+    uint256 public constant LIQUIDITY_ALLOCATION = 2_250_000 * 10 ** 18;
+    uint256 public constant DEVELOPMENT_ALLOCATION = 2_250_000 * 10 ** 18;
+    uint256 public constant RESERVE_ALLOCATION = 1_500_000 * 10 ** 18;
+    uint256 public constant TEAM_ALLOCATION = 1_500_000 * 10 ** 18;
+
+    /// @notice Ecosystem Treasury wallet
+    address public ecosystemWallet;
+
+    /// @notice Community Rewards wallet
+    address public communityWallet;
+
+    /// @notice Liquidity wallet
+    address public liquidityWallet;
+
+    /// @notice Development wallet
+    address public developmentWallet;
+
+    /// @notice Strategic Reserve wallet
+    address public reserveWallet;
+
+    /// @notice Founding Team wallet
+    address public teamWallet;
+
+       /// -----------------------------------------------------------------------
+    /// Allocation Tracking
+    /// -----------------------------------------------------------------------
+
+    uint256 public ecosystemDistributed;
+    uint256 public communityDistributed;
+    uint256 public liquidityDistributed;
+    uint256 public developmentDistributed;
+    uint256 public reserveDistributed;
+    uint256 public teamDistributed;
+
+       /// -----------------------------------------------------------------------
+    /// Events
+    /// -----------------------------------------------------------------------
+
+    event TokensDistributed(
+        string indexed category,
+        address indexed recipient,
+        uint256 amount
+    );
+
+    event WalletUpdated(
+    string indexed category,
+    address indexed oldWallet,
+    address indexed newWallet
+);
+
+/// @notice Ensures a wallet address is valid.
+modifier validAddress(address newWallet) {
+    require(newWallet != address(0), "Invalid wallet");
+    _;
+}
+
+    constructor(
+        address initialOwner,
+        IERC20 tokenAddress,
+        address _ecosystemWallet,
+        address _communityWallet,
+        address _liquidityWallet,
+        address _developmentWallet,
+        address _reserveWallet,
+        address _teamWallet
+    ) Ownable(initialOwner) {
+
+        require(address(tokenAddress) != address(0), "Invalid token");
+
+        lgcToken = tokenAddress;
+
+        ecosystemWallet = _ecosystemWallet;
+        communityWallet = _communityWallet;
+        liquidityWallet = _liquidityWallet;
+        developmentWallet = _developmentWallet;
+        reserveWallet = _reserveWallet;
+        teamWallet = _teamWallet;
+    }
+
+    /// @notice Updates the Ecosystem Treasury wallet.
+function updateEcosystemWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = ecosystemWallet;
+
+    ecosystemWallet = newWallet;
+
+    emit WalletUpdated(
+        "Ecosystem",
+        oldWallet,
+        newWallet
+    );
+}
+
+/// @notice Updates the Community Rewards wallet.
+function updateCommunityWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = communityWallet;
+
+    communityWallet = newWallet;
+
+    emit WalletUpdated(
+        "Community",
+        oldWallet,
+        newWallet
+    );
+}
+/// @notice Updates the Liquidity wallet.
+function updateLiquidityWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = liquidityWallet;
+
+    liquidityWallet = newWallet;
+
+    emit WalletUpdated(
+        "Liquidity",
+        oldWallet,
+        newWallet
+    );
+}
+
+/// @notice Updates the Development wallet.
+function updateDevelopmentWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = developmentWallet;
+
+    developmentWallet = newWallet;
+
+    emit WalletUpdated(
+        "Development",
+        oldWallet,
+        newWallet
+    );
+}
+
+/// @notice Updates the Strategic Reserve wallet.
+function updateReserveWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = reserveWallet;
+
+    reserveWallet = newWallet;
+
+    emit WalletUpdated(
+        "Reserve",
+        oldWallet,
+        newWallet
+    );
+}
+
+/// @notice Updates the Founding Team wallet.
+function updateTeamWallet(address newWallet)
+    external
+    onlyOwner
+    validAddress(newWallet)
+{
+    address oldWallet = teamWallet;
+
+    teamWallet = newWallet;
+
+    emit WalletUpdated(
+        "Team",
+        oldWallet,
+        newWallet
+    );
+}
+
+    /// @notice Distributes Ecosystem Treasury tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeEcosystem(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        ecosystemDistributed + amount <= ECOSYSTEM_ALLOCATION,
+        "Ecosystem allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    ecosystemDistributed += amount;
+
+    lgcToken.safeTransfer(ecosystemWallet, amount);
+
+    emit TokensDistributed(
+        "Ecosystem",
+        ecosystemWallet,
+        amount
+    );
+
+   
+}
+
+/// @notice Distributes Community Rewards tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeCommunity(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        communityDistributed + amount <= COMMUNITY_ALLOCATION,
+        "Community allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    communityDistributed += amount;
+
+    lgcToken.safeTransfer(communityWallet, amount);
+
+    emit TokensDistributed(
+        "Community",
+        communityWallet,
+        amount
+    );
+   
+}
+
+/// @notice Distributes Liquidity tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeLiquidity(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        liquidityDistributed + amount <= LIQUIDITY_ALLOCATION,
+        "Liquidity allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    liquidityDistributed += amount;
+
+    lgcToken.safeTransfer(liquidityWallet, amount);
+
+    emit TokensDistributed(
+        "Liquidity",
+        liquidityWallet,
+        amount
+    );
+
+   
+}
+
+/// @notice Distributes Development tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeDevelopment(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        developmentDistributed + amount <= DEVELOPMENT_ALLOCATION,
+        "Development allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    developmentDistributed += amount;
+
+    lgcToken.safeTransfer(developmentWallet, amount);
+
+    emit TokensDistributed(
+        "Development",
+        developmentWallet,
+        amount
+    );
+
+    
+}
+
+/// @notice Distributes Strategic Reserve tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeReserve(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        reserveDistributed + amount <= RESERVE_ALLOCATION,
+        "Reserve allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    reserveDistributed += amount;
+
+    lgcToken.safeTransfer(reserveWallet, amount);
+
+    emit TokensDistributed(
+        "Reserve",
+        reserveWallet,
+        amount
+    );
+
+  
+}
+
+/// @notice Distributes Founding Team tokens.
+/// @param amount Amount of LGC to distribute.
+function distributeTeam(uint256 amount)
+    external
+    onlyOwner
+{
+    require(
+        teamDistributed + amount <= TEAM_ALLOCATION,
+        "Team allocation exceeded"
+    );
+
+    require(
+        lgcToken.balanceOf(address(this)) >= amount,
+        "Insufficient treasury balance"
+    );
+
+    teamDistributed += amount;
+
+    lgcToken.safeTransfer(teamWallet, amount);
+
+    emit TokensDistributed(
+        "Team",
+        teamWallet,
+        amount
+    );
+
+    
+}
+}
