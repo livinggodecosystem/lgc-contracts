@@ -1543,4 +1543,100 @@ it("Should revert for invalid allocation enum", async function () {
     ).to.be.reverted;
 
 });
+
+it("Should return the correct treasury dashboard initially", async function () {
+
+    const dashboard =
+        await treasury.getTreasuryDashboard();
+
+    expect(dashboard.treasury).to.equal(0);
+
+    expect(dashboard.totalAllocation_).to.equal(
+        ethers.parseEther("15000000")
+    );
+
+    expect(dashboard.distributed).to.equal(0);
+
+    expect(dashboard.remaining).to.equal(
+        ethers.parseEther("15000000")
+    );
+
+    expect(dashboard.progress).to.equal(0);
+
+    expect(dashboard.fullyDistributed).to.equal(false);
+
+});
+
+it("Should update treasury dashboard after distribution", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("1000000")
+    );
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("500000")
+    );
+
+    const dashboard =
+        await treasury.getTreasuryDashboard();
+
+    expect(dashboard.treasury).to.equal(
+        ethers.parseEther("500000")
+    );
+
+    expect(dashboard.distributed).to.equal(
+        ethers.parseEther("500000")
+    );
+
+    expect(dashboard.progress).to.equal(3);
+
+});
+
+it("Should return all allocation information initially", async function () {
+
+    const allocations = await treasury.getAllAllocations();
+
+    expect(allocations.ecosystem.allocated).to.equal(
+        ethers.parseEther("4500000")
+    );
+
+    expect(allocations.ecosystem.distributed).to.equal(0);
+
+    expect(allocations.ecosystem.remaining).to.equal(
+        ethers.parseEther("4500000")
+    );
+
+    expect(allocations.ecosystem.progress).to.equal(0);
+
+    expect(allocations.ecosystem.exhausted).to.equal(false);
+
+});
+
+it("Should update allocation information after distribution", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("1000000")
+    );
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("450000")
+    );
+
+    const allocations = await treasury.getAllAllocations();
+
+    expect(allocations.ecosystem.distributed).to.equal(
+        ethers.parseEther("450000")
+    );
+
+    expect(allocations.ecosystem.remaining).to.equal(
+        ethers.parseEther("4050000")
+    );
+
+    expect(allocations.ecosystem.progress).to.equal(10);
+
+    expect(allocations.ecosystem.exhausted).to.equal(false);
+
+});
 });

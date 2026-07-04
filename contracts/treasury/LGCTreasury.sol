@@ -25,6 +25,16 @@ enum AllocationType {
     Team
 }
 
+
+/// @notice Complete allocation information.
+struct AllocationInfo {
+    uint256 allocated;
+    uint256 distributed;
+    uint256 remaining;
+    uint256 progress;
+    bool exhausted;
+}
+
     /// @notice Living God Coin token contract
     IERC20 public immutable lgcToken;
 
@@ -797,5 +807,88 @@ function getAllocationInfo(
     remaining = allocated - distributed;
     progress = (distributed * 100) / allocated;
     exhausted = (remaining == 0);
+}
+
+/// @notice Returns complete treasury dashboard statistics.
+function getTreasuryDashboard()
+    public
+    view
+    returns (
+        uint256 treasury,
+        uint256 totalAllocation_,
+        uint256 distributed,
+        uint256 remaining,
+        uint256 progress,
+        bool fullyDistributed
+    )
+{
+    treasury = treasuryBalance();
+    totalAllocation_ = totalAllocation();
+    distributed = totalDistributed();
+    remaining = totalRemainingAllocation();
+    progress = distributionPercentage();
+    fullyDistributed = isTreasuryFullyDistributed();
+}
+
+/// @notice Returns information for every treasury allocation.
+function getAllAllocations()
+    public
+    view
+    returns (
+        AllocationInfo memory ecosystem,
+        AllocationInfo memory community,
+        AllocationInfo memory liquidity,
+        AllocationInfo memory development,
+        AllocationInfo memory reserve,
+        AllocationInfo memory team
+    )
+{
+    (
+        ecosystem.allocated,
+        ecosystem.distributed,
+        ecosystem.remaining,
+        ecosystem.progress,
+        ecosystem.exhausted
+    ) = getAllocationInfo(AllocationType.Ecosystem);
+
+    (
+        community.allocated,
+        community.distributed,
+        community.remaining,
+        community.progress,
+        community.exhausted
+    ) = getAllocationInfo(AllocationType.Community);
+
+    (
+        liquidity.allocated,
+        liquidity.distributed,
+        liquidity.remaining,
+        liquidity.progress,
+        liquidity.exhausted
+    ) = getAllocationInfo(AllocationType.Liquidity);
+
+    (
+        development.allocated,
+        development.distributed,
+        development.remaining,
+        development.progress,
+        development.exhausted
+    ) = getAllocationInfo(AllocationType.Development);
+
+    (
+        reserve.allocated,
+        reserve.distributed,
+        reserve.remaining,
+        reserve.progress,
+        reserve.exhausted
+    ) = getAllocationInfo(AllocationType.Reserve);
+
+    (
+        team.allocated,
+        team.distributed,
+        team.remaining,
+        team.progress,
+        team.exhausted
+    ) = getAllocationInfo(AllocationType.Team);
 }
 }
