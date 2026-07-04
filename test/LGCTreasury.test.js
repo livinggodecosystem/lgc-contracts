@@ -1,6 +1,17 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
+
+const AllocationType = {
+    Ecosystem: 0,
+    Community: 1,
+    Liquidity: 2,
+    Development: 3,
+    Reserve: 4,
+    Team: 5,
+};
+
+
 describe("LGCTreasury", function () {
 
     let owner;
@@ -1389,5 +1400,147 @@ it("Should return false when treasury has no balance", async function () {
     expect(
         await treasury.hasTreasuryBalance()
     ).to.equal(false);
+});
+
+it("Should return all distributed amounts", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("1000000")
+    );
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("100")
+    );
+
+    await treasury.distributeCommunity(
+        ethers.parseEther("200")
+    );
+
+    const amounts = await treasury.distributedAmounts();
+
+    expect(amounts[0]).to.equal(ethers.parseEther("100"));
+    expect(amounts[1]).to.equal(ethers.parseEther("200"));
+    expect(amounts[2]).to.equal(0);
+    expect(amounts[3]).to.equal(0);
+    expect(amounts[4]).to.equal(0);
+    expect(amounts[5]).to.equal(0);
+
+});
+
+it("Should return all remaining allocations", async function () {
+
+    const remaining = await treasury.remainingAllocations();
+
+    expect(remaining[0]).to.equal(
+        ethers.parseEther("4500000")
+    );
+
+    expect(remaining[1]).to.equal(
+        ethers.parseEther("3000000")
+    );
+
+    expect(remaining[2]).to.equal(
+        ethers.parseEther("2250000")
+    );
+
+    expect(remaining[3]).to.equal(
+        ethers.parseEther("2250000")
+    );
+
+    expect(remaining[4]).to.equal(
+        ethers.parseEther("1500000")
+    );
+
+    expect(remaining[5]).to.equal(
+        ethers.parseEther("1500000")
+    );
+
+});
+
+it("Should return all allocation progress percentages", async function () {
+
+    const progress = await treasury.allocationProgress();
+
+    expect(progress[0]).to.equal(0);
+    expect(progress[1]).to.equal(0);
+    expect(progress[2]).to.equal(0);
+    expect(progress[3]).to.equal(0);
+    expect(progress[4]).to.equal(0);
+    expect(progress[5]).to.equal(0);
+    expect(progress[6]).to.equal(0);
+
+});
+
+it("Should return false when treasury is not fully distributed", async function () {
+
+    expect(
+        await treasury.isTreasuryFullyDistributed()
+    ).to.equal(false);
+
+});
+
+it("Should return the correct treasury statistics", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("1000")
+    );
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("100")
+    );
+
+    const stats = await treasury.treasuryStatistics();
+
+    expect(stats[0]).to.equal(
+        ethers.parseEther("900")
+    );
+
+    expect(stats[1]).to.equal(
+        ethers.parseEther("100")
+    );
+
+    expect(stats[3]).to.equal(
+        ethers.parseEther("15000000")
+    );
+
+});
+
+it("Should return false when Ecosystem allocation is not exhausted", async function () {
+
+    expect(
+        await treasury.isAllocationExhausted(
+            AllocationType.Ecosystem
+        )
+    ).to.equal(false);
+
+});
+
+it("Should return true when Ecosystem allocation is exhausted", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("4500000")
+    );
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("4500000")
+    );
+
+    expect(
+        await treasury.isAllocationExhausted(
+            AllocationType.Ecosystem
+        )
+    ).to.equal(true);
+
+});
+
+it("Should revert for invalid allocation enum", async function () {
+
+    await expect(
+        treasury.isAllocationExhausted(99)
+    ).to.be.reverted;
+
 });
 });

@@ -15,6 +15,16 @@ contract LGCTreasury is Ownable, Pausable  {
 
     using SafeERC20 for IERC20;
 
+    /// @notice Treasury allocation categories.
+enum AllocationType {
+    Ecosystem,
+    Community,
+    Liquidity,
+    Development,
+    Reserve,
+    Team
+}
+
     /// @notice Living God Coin token contract
     IERC20 public immutable lgcToken;
 
@@ -623,5 +633,169 @@ function hasTreasuryBalance()
     returns (bool)
 {
     return treasuryBalance() > 0;
+}
+
+/// @notice Returns all distributed amounts.
+function distributedAmounts()
+    public
+    view
+    returns (
+        uint256 ecosystem,
+        uint256 community,
+        uint256 liquidity,
+        uint256 development,
+        uint256 reserve,
+        uint256 team
+    )
+{
+    return (
+        ecosystemDistributed,
+        communityDistributed,
+        liquidityDistributed,
+        developmentDistributed,
+        reserveDistributed,
+        teamDistributed
+    );
+}
+
+/// @notice Returns all remaining allocations.
+function remainingAllocations()
+    public
+    view
+    returns (
+        uint256 ecosystem,
+        uint256 community,
+        uint256 liquidity,
+        uint256 development,
+        uint256 reserve,
+        uint256 team
+    )
+{
+    return (
+        remainingEcosystemAllocation(),
+        remainingCommunityAllocation(),
+        remainingLiquidityAllocation(),
+        remainingDevelopmentAllocation(),
+        remainingReserveAllocation(),
+        remainingTeamAllocation()
+    );
+}
+
+/// @notice Returns all allocation progress percentages.
+function allocationProgress()
+    public
+    view
+    returns (
+        uint256 ecosystem,
+        uint256 community,
+        uint256 liquidity,
+        uint256 development,
+        uint256 reserve,
+        uint256 team,
+        uint256 treasury
+    )
+{
+    return (
+        ecosystemProgress(),
+        communityProgress(),
+        liquidityProgress(),
+        developmentProgress(),
+        reserveProgress(),
+        teamProgress(),
+        treasuryProgress()
+    );
+}
+
+/// @notice Returns the percentage of the total treasury allocation distributed.
+function treasuryProgress()
+    public
+    view
+    returns (uint256)
+{
+    return (totalDistributed() * 100) / totalAllocation();
+}
+
+/// @notice Returns whether every allocation has been fully distributed.
+function isTreasuryFullyDistributed()
+    public
+    view
+    returns (bool)
+{
+    return totalRemainingAllocation() == 0;
+}
+
+/// @notice Returns a treasury dashboard summary.
+function treasuryStatistics()
+    public
+    view
+    returns (
+        uint256 balance,
+        uint256 distributed,
+        uint256 remaining,
+        uint256 allocation,
+        uint256 progress
+    )
+{
+    return (
+        treasuryBalance(),
+        totalDistributed(),
+        totalRemainingAllocation(),
+        totalAllocation(),
+        treasuryProgress()
+    );
+}
+
+/// @notice Returns whether an allocation has been fully distributed.
+function isAllocationExhausted(
+    AllocationType allocation
+)
+    public
+    view
+    returns (bool)
+{
+    (, , , , bool exhausted) =
+        getAllocationInfo(allocation);
+
+    return exhausted;
+}
+/// @notice Returns complete information about a treasury allocation.
+function getAllocationInfo(
+    AllocationType allocation
+)
+    public
+    view
+    returns (
+        uint256 allocated,
+        uint256 distributed,
+        uint256 remaining,
+        uint256 progress,
+        bool exhausted
+    )
+{
+    
+       
+    if (allocation == AllocationType.Ecosystem) {
+        allocated = ECOSYSTEM_ALLOCATION;
+        distributed = ecosystemDistributed;
+    } else if (allocation == AllocationType.Community) {
+        allocated = COMMUNITY_ALLOCATION;
+        distributed = communityDistributed;
+    } else if (allocation == AllocationType.Liquidity) {
+        allocated = LIQUIDITY_ALLOCATION;
+        distributed = liquidityDistributed;
+    } else if (allocation == AllocationType.Development) {
+        allocated = DEVELOPMENT_ALLOCATION;
+        distributed = developmentDistributed;
+    } else if (allocation == AllocationType.Reserve) {
+        allocated = RESERVE_ALLOCATION;
+        distributed = reserveDistributed;
+    } else {
+        allocated = TEAM_ALLOCATION;
+        distributed = teamDistributed;
+    }
+
+    remaining = allocated - distributed;
+    progress = (distributed * 100) / allocated;
+    exhausted = (remaining == 0);
 }
 }
