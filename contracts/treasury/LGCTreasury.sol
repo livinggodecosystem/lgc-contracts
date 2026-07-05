@@ -5,13 +5,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title Living God Coin Treasury
 /// @author Living God Ecosystem
 /// @notice Manages the treasury allocations for the Living God Ecosystem.
 /// @dev Holds LGC tokens and distributes them according to approved allocations.
 
-contract LGCTreasury is Ownable, Pausable  {
+contract LGCTreasury is Ownable, Pausable, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
 
@@ -358,6 +359,7 @@ function distributeEcosystem(uint256 amount)
     external
     onlyOwner
     whenNotPaused
+    nonReentrant
 {
     ecosystemDistributed = _distribute(
         amount,
@@ -374,6 +376,7 @@ function distributeCommunity(uint256 amount)
     external
     onlyOwner
      whenNotPaused
+     nonReentrant
 {
    communityDistributed = _distribute(
     amount,
@@ -391,6 +394,7 @@ function distributeLiquidity(uint256 amount)
     external
     onlyOwner
      whenNotPaused
+     nonReentrant
 {
    liquidityDistributed = _distribute(
     amount,
@@ -409,6 +413,7 @@ function distributeDevelopment(uint256 amount)
     external
     onlyOwner
      whenNotPaused
+     nonReentrant
 {
    developmentDistributed = _distribute(
     amount,
@@ -426,6 +431,7 @@ function distributeReserve(uint256 amount)
     external
     onlyOwner
      whenNotPaused
+     nonReentrant
 {
    reserveDistributed = _distribute(
     amount,
@@ -443,6 +449,7 @@ function distributeTeam(uint256 amount)
     external
     onlyOwner
      whenNotPaused
+     nonReentrant
 {
     teamDistributed = _distribute(
     amount,
@@ -527,10 +534,12 @@ function recoverERC20(
     IERC20 token,
     address recipient,
     uint256 amount
+   
 )
     external
     onlyOwner
     validAddress(recipient)
+     nonReentrant
 {
     if (address(token) == address(lgcToken))
     revert CannotRecoverLGC();
