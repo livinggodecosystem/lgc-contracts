@@ -166,13 +166,14 @@ it("Should not exceed the Ecosystem allocation", async function () {
 
     const excessiveAmount = ethers.parseEther("4500001");
 
-    await expect(
-
-        treasury.distributeEcosystem(excessiveAmount)
-
-    ).to.be.revertedWith(
-        "Ecosystem allocation exceeded"
-    );
+  await expect(
+    treasury.distributeEcosystem(
+        ethers.parseEther("4500001")
+    )
+).to.be.revertedWithCustomError(
+    treasury,
+    "EcosystemAllocationExceeded"
+);
 
 });
 
@@ -191,9 +192,10 @@ it("Should not distribute more than the treasury balance", async function () {
 
         treasury.distributeEcosystem(distributionAmount)
 
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 
 });
 
@@ -252,9 +254,10 @@ it("Should not allow the Ecosystem wallet to be the zero address", async functio
             ethers.ZeroAddress
         )
 
-    ).to.be.revertedWith(
-        "Invalid wallet"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InvalidWallet"
+);
 
 });
 
@@ -358,9 +361,10 @@ it("Should not exceed the Community allocation", async function () {
 
         treasury.distributeCommunity(excessiveAmount)
 
-    ).to.be.revertedWith(
-        "Community allocation exceeded"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "CommunityAllocationExceeded"
+);
 
 });
 
@@ -376,13 +380,13 @@ it("Should not distribute more Community tokens than the treasury balance", asyn
     const distributionAmount = ethers.parseEther("1000");
 
     await expect(
-
-        treasury.distributeCommunity(distributionAmount)
-
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
-
+    treasury.distributeCommunity(
+        distributionAmount
+    )
+).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 });
 
 it("Should distribute Liquidity tokens correctly", async function () {
@@ -444,10 +448,10 @@ it("Should not exceed the Liquidity allocation", async function () {
 
         treasury.distributeLiquidity(excessiveAmount)
 
-    ).to.be.revertedWith(
-        "Liquidity allocation exceeded"
-    );
-
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "LiquidityAllocationExceeded"
+);
 });
 
 it("Should not distribute more Liquidity tokens than the treasury balance", async function () {
@@ -465,9 +469,10 @@ it("Should not distribute more Liquidity tokens than the treasury balance", asyn
 
         treasury.distributeLiquidity(distributionAmount)
 
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 
 });
 
@@ -555,9 +560,10 @@ it("Should not exceed the Development allocation", async function () {
 
         treasury.distributeDevelopment(excessiveAmount)
 
-    ).to.be.revertedWith(
-        "Development allocation exceeded"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "DevelopmentAllocationExceeded"
+);
 
 });
 
@@ -576,9 +582,10 @@ it("Should not distribute more Development tokens than the treasury balance", as
 
         treasury.distributeDevelopment(distributionAmount)
 
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 
 });
 
@@ -666,9 +673,10 @@ it("Should not exceed the Reserve allocation", async function () {
 
         treasury.distributeReserve(excessiveAmount)
 
-    ).to.be.revertedWith(
-        "Reserve allocation exceeded"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "ReserveAllocationExceeded"
+);
 
 });
 
@@ -687,9 +695,10 @@ it("Should not distribute more Reserve tokens than the treasury balance", async 
 
         treasury.distributeReserve(distributionAmount)
 
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 
 });
 
@@ -777,9 +786,10 @@ it("Should not exceed the Team allocation", async function () {
 
         treasury.distributeTeam(excessiveAmount)
 
-    ).to.be.revertedWith(
-        "Team allocation exceeded"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "TeamAllocationExceeded"
+);
 
 });
 
@@ -798,9 +808,10 @@ it("Should not distribute more Team tokens than the treasury balance", async fun
 
         treasury.distributeTeam(distributionAmount)
 
-    ).to.be.revertedWith(
-        "Insufficient treasury balance"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "InsufficientTreasuryBalance"
+);
 
 });
 
@@ -1099,9 +1110,10 @@ it("Should reject distributions after Ecosystem allocation is exhausted", async 
             ethers.parseEther("1")
         )
 
-    ).to.be.revertedWith(
-        "Ecosystem allocation exceeded"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "EcosystemAllocationExceeded"
+);
 
 });
 
@@ -1223,17 +1235,16 @@ it("Should not allow a non-owner to recover ERC20 tokens", async function () {
 
 it("Should not allow recovery of LGC", async function () {
 
-    await expect(
-
-        treasury.recoverERC20(
-            await lgc.getAddress(),
-            owner.address,
-            ethers.parseEther("100")
-        )
-
-    ).to.be.revertedWith(
-        "Cannot recover LGC"
-    );
+   await expect(
+    treasury.recoverERC20(
+        lgc.target,
+        owner.address,
+        ethers.parseEther("100")
+    )
+).to.be.revertedWithCustomError(
+    treasury,
+    "CannotRecoverLGC"
+);
 
 });
 
@@ -1303,9 +1314,10 @@ it("Should reject recovering LGC", async function () {
             100
         )
 
-    ).to.be.revertedWith(
-        "Cannot recover LGC"
-    );
+    ).to.be.revertedWithCustomError(
+    treasury,
+    "CannotRecoverLGC"
+);
 
 });
 
@@ -1637,6 +1649,68 @@ it("Should update allocation information after distribution", async function () 
     expect(allocations.ecosystem.progress).to.equal(10);
 
     expect(allocations.ecosystem.exhausted).to.equal(false);
+
+});
+
+it("Should emit TreasuryPaused event", async function () {
+
+    await expect(
+        treasury.pause()
+    )
+        .to.emit(treasury, "TreasuryPaused")
+        .withArgs(owner.address);
+
+});
+
+it("Should emit TreasuryUnpaused event", async function () {
+
+    await treasury.pause();
+
+    await expect(
+        treasury.unpause()
+    )
+        .to.emit(treasury, "TreasuryUnpaused")
+        .withArgs(owner.address);
+
+});
+
+it("Should not allow distributions while paused", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("100")
+    );
+
+    await treasury.pause();
+
+    await expect(
+        treasury.distributeEcosystem(
+            ethers.parseEther("10")
+        )
+    ).to.be.reverted;
+
+});
+
+it("Should allow distributions after unpause", async function () {
+
+    await lgc.transfer(
+        treasury.target,
+        ethers.parseEther("100")
+    );
+
+    await treasury.pause();
+
+    await treasury.unpause();
+
+    await treasury.distributeEcosystem(
+        ethers.parseEther("10")
+    );
+
+    expect(
+        await treasury.ecosystemDistributed()
+    ).to.equal(
+        ethers.parseEther("10")
+    );
 
 });
 });

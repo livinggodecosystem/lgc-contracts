@@ -101,9 +101,35 @@ struct AllocationInfo {
     uint256 amount
 );
 
+event TreasuryPaused(
+    address indexed account
+);
+
+event TreasuryUnpaused(
+    address indexed account
+);
+
+/// -----------------------------------------------------------------------
+/// Custom Errors
+/// -----------------------------------------------------------------------
+
+error InvalidWallet();
+error InvalidToken();
+error InsufficientTreasuryBalance();
+error EcosystemAllocationExceeded();
+error CommunityAllocationExceeded();
+error LiquidityAllocationExceeded();
+error DevelopmentAllocationExceeded();
+error ReserveAllocationExceeded();
+error TeamAllocationExceeded();
+error CannotRecoverLGC();
+error InvalidAllocation();
+
 /// @notice Ensures a wallet address is valid.
 modifier validAddress(address newWallet) {
-    require(newWallet != address(0), "Invalid wallet");
+    if (newWallet == address(0))
+        revert InvalidWallet();
+
     _;
 }
 
@@ -113,6 +139,8 @@ function pause()
     onlyOwner
 {
     _pause();
+
+    emit TreasuryPaused(msg.sender);
 }
 
 /// @notice Resume treasury operations.
@@ -121,6 +149,8 @@ function unpause()
     onlyOwner
 {
     _unpause();
+
+    emit TreasuryUnpaused(msg.sender);
 }
 
     constructor(
@@ -134,7 +164,8 @@ function unpause()
         address _teamWallet
     ) Ownable(initialOwner) {
 
-        require(address(tokenAddress) != address(0), "Invalid token");
+        if (address(tokenAddress) == address(0))
+    revert InvalidToken();
 
         lgcToken = tokenAddress;
 
@@ -247,34 +278,94 @@ function updateTeamWallet(address newWallet)
     );
 }
 
-    /// @notice Distributes Ecosystem Treasury tokens.
-/// @param amount Amount of LGC to distribute.
-function distributeEcosystem(uint256 amount)
-    external
-    onlyOwner
-     whenNotPaused
+/// @notice Returns the display name for an allocation type.
+function _allocationName(
+    AllocationType allocationType
+)
+    internal
+    pure
+    returns (string memory)
 {
-    require(
-        ecosystemDistributed + amount <= ECOSYSTEM_ALLOCATION,
-        "Ecosystem allocation exceeded"
-    );
+    if (allocationType == AllocationType.Ecosystem)
+        return "Ecosystem";
 
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
+    if (allocationType == AllocationType.Community)
+        return "Community";
 
-    ecosystemDistributed += amount;
+    if (allocationType == AllocationType.Liquidity)
+        return "Liquidity";
 
-    lgcToken.safeTransfer(ecosystemWallet, amount);
+    if (allocationType == AllocationType.Development)
+        return "Development";
 
-    emit TokensDistributed(
-        "Ecosystem",
-        ecosystemWallet,
+    if (allocationType == AllocationType.Reserve)
+        return "Reserve";
+
+    return "Team";
+}
+
+/// @notice Internal helper for token distribution.
+function _distribute(
+    uint256 amount,
+    uint256 distributed,
+    uint256 allocation,
+    address recipient,
+    AllocationType allocationType
+)
+    internal
+    returns (uint256)
+{
+   if (distributed + amount > allocation) {
+
+    if (allocationType == AllocationType.Ecosystem)
+        revert EcosystemAllocationExceeded();
+
+    if (allocationType == AllocationType.Community)
+        revert CommunityAllocationExceeded();
+
+    if (allocationType == AllocationType.Liquidity)
+        revert LiquidityAllocationExceeded();
+
+    if (allocationType == AllocationType.Development)
+        revert DevelopmentAllocationExceeded();
+
+    if (allocationType == AllocationType.Reserve)
+        revert ReserveAllocationExceeded();
+
+    revert TeamAllocationExceeded();
+}
+    if (lgcToken.balanceOf(address(this)) < amount)
+        revert InsufficientTreasuryBalance();
+
+    lgcToken.safeTransfer(
+        recipient,
         amount
     );
 
-   
+    emit TokensDistributed(
+    _allocationName(allocationType),
+    recipient,
+    amount
+);
+
+    return distributed + amount;
+}
+
+    /// @notice Distributes Ecosystem Treasury tokens.
+/// @param amount Amount of LGC to distribute.
+/// @notice Distributes Ecosystem Treasury tokens.
+function distributeEcosystem(uint256 amount)
+    external
+    onlyOwner
+    whenNotPaused
+{
+    ecosystemDistributed = _distribute(
+        amount,
+        ecosystemDistributed,
+        ECOSYSTEM_ALLOCATION,
+        ecosystemWallet,
+        AllocationType.Ecosystem
+    );
 }
 
 /// @notice Distributes Community Rewards tokens.
@@ -284,25 +375,13 @@ function distributeCommunity(uint256 amount)
     onlyOwner
      whenNotPaused
 {
-    require(
-        communityDistributed + amount <= COMMUNITY_ALLOCATION,
-        "Community allocation exceeded"
-    );
-
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
-
-    communityDistributed += amount;
-
-    lgcToken.safeTransfer(communityWallet, amount);
-
-    emit TokensDistributed(
-        "Community",
-        communityWallet,
-        amount
-    );
+   communityDistributed = _distribute(
+    amount,
+    communityDistributed,
+    COMMUNITY_ALLOCATION,
+    communityWallet,
+    AllocationType.Community
+);
    
 }
 
@@ -313,25 +392,13 @@ function distributeLiquidity(uint256 amount)
     onlyOwner
      whenNotPaused
 {
-    require(
-        liquidityDistributed + amount <= LIQUIDITY_ALLOCATION,
-        "Liquidity allocation exceeded"
-    );
-
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
-
-    liquidityDistributed += amount;
-
-    lgcToken.safeTransfer(liquidityWallet, amount);
-
-    emit TokensDistributed(
-        "Liquidity",
-        liquidityWallet,
-        amount
-    );
+   liquidityDistributed = _distribute(
+    amount,
+    liquidityDistributed,
+    LIQUIDITY_ALLOCATION,
+    liquidityWallet,
+    AllocationType.Liquidity
+);
 
    
 }
@@ -343,27 +410,14 @@ function distributeDevelopment(uint256 amount)
     onlyOwner
      whenNotPaused
 {
-    require(
-        developmentDistributed + amount <= DEVELOPMENT_ALLOCATION,
-        "Development allocation exceeded"
-    );
-
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
-
-    developmentDistributed += amount;
-
-    lgcToken.safeTransfer(developmentWallet, amount);
-
-    emit TokensDistributed(
-        "Development",
-        developmentWallet,
-        amount
-    );
-
-    
+   developmentDistributed = _distribute(
+    amount,
+    developmentDistributed,
+    DEVELOPMENT_ALLOCATION,
+    developmentWallet,
+    AllocationType.Development
+);
+   
 }
 
 /// @notice Distributes Strategic Reserve tokens.
@@ -373,27 +427,14 @@ function distributeReserve(uint256 amount)
     onlyOwner
      whenNotPaused
 {
-    require(
-        reserveDistributed + amount <= RESERVE_ALLOCATION,
-        "Reserve allocation exceeded"
-    );
+   reserveDistributed = _distribute(
+    amount,
+    reserveDistributed,
+    RESERVE_ALLOCATION,
+    reserveWallet,
+    AllocationType.Reserve
+);
 
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
-
-    reserveDistributed += amount;
-
-    lgcToken.safeTransfer(reserveWallet, amount);
-
-    emit TokensDistributed(
-        "Reserve",
-        reserveWallet,
-        amount
-    );
-
-  
 }
 
 /// @notice Distributes Founding Team tokens.
@@ -403,26 +444,13 @@ function distributeTeam(uint256 amount)
     onlyOwner
      whenNotPaused
 {
-    require(
-        teamDistributed + amount <= TEAM_ALLOCATION,
-        "Team allocation exceeded"
-    );
-
-    require(
-        lgcToken.balanceOf(address(this)) >= amount,
-        "Insufficient treasury balance"
-    );
-
-    teamDistributed += amount;
-
-    lgcToken.safeTransfer(teamWallet, amount);
-
-    emit TokensDistributed(
-        "Team",
-        teamWallet,
-        amount
-    );
-
+    teamDistributed = _distribute(
+    amount,
+    teamDistributed,
+    TEAM_ALLOCATION,
+    teamWallet,
+    AllocationType.Team
+);
     
 }
 
@@ -504,10 +532,8 @@ function recoverERC20(
     onlyOwner
     validAddress(recipient)
 {
-    require(
-        address(token) != address(lgcToken),
-        "Cannot recover LGC"
-    );
+    if (address(token) == address(lgcToken))
+    revert CannotRecoverLGC();
 
     token.safeTransfer(
         recipient,
@@ -799,10 +825,12 @@ function getAllocationInfo(
     } else if (allocation == AllocationType.Reserve) {
         allocated = RESERVE_ALLOCATION;
         distributed = reserveDistributed;
-    } else {
-        allocated = TEAM_ALLOCATION;
-        distributed = teamDistributed;
-    }
+    } else if (allocation == AllocationType.Team) {
+    allocated = TEAM_ALLOCATION;
+    distributed = teamDistributed;
+} else {
+    revert InvalidAllocation();
+}
 
     remaining = allocated - distributed;
     progress = (distributed * 100) / allocated;
