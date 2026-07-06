@@ -110,6 +110,11 @@ event TreasuryUnpaused(
     address indexed account
 );
 
+event RecoveredETH(
+    address indexed recipient,
+    uint256 amount
+);
+
 /// -----------------------------------------------------------------------
 /// Custom Errors
 /// -----------------------------------------------------------------------
@@ -177,6 +182,9 @@ function unpause()
         reserveWallet = _reserveWallet;
         teamWallet = _teamWallet;
     }
+
+    /// @notice Accept native ETH transfers.
+receive() external payable {}
 
     /// @notice Updates the Ecosystem Treasury wallet.
 function updateEcosystemWallet(address newWallet)
@@ -556,6 +564,31 @@ function recoverERC20(
     );
 }
 
+
+/// @notice Recover native ETH accidentally sent to the treasury.
+/// @param recipient Address receiving the ETH.
+/// @param amount Amount of ETH to recover.
+function recoverETH(
+    address payable recipient,
+    uint256 amount
+)
+    external
+    onlyOwner
+    nonReentrant
+    validAddress(recipient)
+{
+    if (address(this).balance < amount)
+        revert InsufficientTreasuryBalance();
+
+    (bool success, ) = recipient.call{value: amount}("");
+
+    require(success, "ETH transfer failed");
+
+    emit RecoveredETH(
+        recipient,
+        amount
+    );
+}
 /// -----------------------------------------------------------------------
 /// Dashboard Functions
 /// -----------------------------------------------------------------------

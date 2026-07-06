@@ -1304,6 +1304,106 @@ it("Should recover another ERC20 token", async function () {
 
 });
 
+it("Should recover accidentally sent ETH", async function () {
+
+    const amount = ethers.parseEther("1");
+
+    await owner.sendTransaction({
+        to: await treasury.getAddress(),
+        value: amount,
+    });
+
+    const recipientBalanceBefore =
+        await ethers.provider.getBalance(addr1.address);
+
+    await expect(
+        treasury.recoverETH(
+            addr1.address,
+            amount
+        )
+    ).to.emit(
+        treasury,
+        "RecoveredETH"
+    );
+
+    const recipientBalanceAfter =
+        await ethers.provider.getBalance(addr1.address);
+
+    expect(
+        recipientBalanceAfter - recipientBalanceBefore
+    ).to.equal(amount);
+
+});
+
+it("Should not allow a non-owner to recover ETH", async function () {
+
+    const amount = ethers.parseEther("1");
+
+    await owner.sendTransaction({
+        to: await treasury.getAddress(),
+        value: amount,
+    });
+
+    await expect(
+
+        treasury
+            .connect(addr1)
+            .recoverETH(
+               addr1.address,
+                amount
+            )
+
+    ).to.be.revertedWithCustomError(
+        treasury,
+        "OwnableUnauthorizedAccount"
+    );
+
+});
+
+it("Should not recover more ETH than available", async function () {
+
+    await expect(
+
+        treasury.recoverETH(
+            addr1.address,
+            ethers.parseEther("1")
+        )
+
+    ).to.be.revertedWithCustomError(
+        treasury,
+        "InsufficientTreasuryBalance"
+    );
+
+});
+
+it("Should emit RecoveredETH event", async function () {
+
+    const amount = ethers.parseEther("1");
+
+    await owner.sendTransaction({
+        to: await treasury.getAddress(),
+        value: amount,
+    });
+
+    await expect(
+
+        treasury.recoverETH(
+           addr1.address,
+            amount
+        )
+
+    )
+        .to.emit(
+            treasury,
+            "RecoveredETH"
+        )
+        .withArgs(
+           addr1.address,
+            amount
+        );
+
+});
+
 it("Should reject recovering LGC", async function () {
 
     await expect(
