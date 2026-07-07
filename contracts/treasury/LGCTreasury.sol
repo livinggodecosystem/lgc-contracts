@@ -39,6 +39,12 @@ struct AllocationInfo {
     /// @notice Living God Coin token contract
     IERC20 public immutable lgcToken;
 
+    /// @notice Treasury contract version.
+string public constant VERSION = "1.0.0";
+
+/// @notice Timestamp when the treasury was deployed.
+uint256 public immutable deployedAt;
+
         /// -----------------------------------------------------------------------
     /// Treasury Allocations
     /// -----------------------------------------------------------------------
@@ -130,6 +136,8 @@ error ReserveAllocationExceeded();
 error TeamAllocationExceeded();
 error CannotRecoverLGC();
 error InvalidAllocation();
+error ETHTransferFailed();
+
 
 /// @notice Ensures a wallet address is valid.
 modifier validAddress(address newWallet) {
@@ -174,6 +182,7 @@ function unpause()
     revert InvalidToken();
 
         lgcToken = tokenAddress;
+        deployedAt = block.timestamp;
 
         ecosystemWallet = _ecosystemWallet;
         communityWallet = _communityWallet;
@@ -582,7 +591,8 @@ function recoverETH(
 
     (bool success, ) = recipient.call{value: amount}("");
 
-    require(success, "ETH transfer failed");
+if (!success)
+    revert ETHTransferFailed();
 
     emit RecoveredETH(
         recipient,
@@ -701,7 +711,7 @@ function distributionPercentage()
     view
     returns (uint256)
 {
-    return (totalDistributed() * 100) / totalAllocation();
+    return treasuryProgress();
 }
 
 /// @notice Returns whether the treasury still holds LGC.
@@ -896,7 +906,7 @@ function getTreasuryDashboard()
     totalAllocation_ = totalAllocation();
     distributed = totalDistributed();
     remaining = totalRemainingAllocation();
-    progress = distributionPercentage();
+    progress = treasuryProgress();
     fullyDistributed = isTreasuryFullyDistributed();
 }
 

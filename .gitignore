@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 # Hardhat
 artifacts/
 cache/
+
+# Environment variables
+.env
