@@ -63,6 +63,10 @@ await mockToken.waitForDeployment();
         );
 
         await treasury.waitForDeployment();
+        await lgc.approve(
+    await treasury.getAddress(),
+    ethers.MaxUint256
+);
     });
 
     it("Should deploy the treasury correctly", async function () {
@@ -198,29 +202,26 @@ it("Should not distribute more than the treasury balance", async function () {
 );
 
 });
-
 it("Should emit TokensDistributed event", async function () {
 
-    const fundingAmount = ethers.parseEther("1000000");
+    const distributionAmount =
+        ethers.parseEther("50000");
 
-    await lgc.transfer(
-        await treasury.getAddress(),
-        fundingAmount
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
     );
 
-    const distributionAmount = ethers.parseEther("50000");
-
     await expect(
-
-        treasury.distributeEcosystem(distributionAmount)
-
-    )
-        .to.emit(treasury, "TokensDistributed")
-        .withArgs(
-            "Ecosystem",
-            addr1.address,
+        treasury.distributeEcosystem(
             distributionAmount
-        );
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        0,
+        addr1.address,
+        distributionAmount
+    );
 
 });
 
@@ -322,6 +323,29 @@ it("Should distribute Community tokens correctly", async function () {
     expect(
         await treasury.communityDistributed()
     ).to.equal(distributionAmount);
+
+});
+
+it("Should emit TokensDistributed event for Community", async function () {
+
+    const distributionAmount =
+        ethers.parseEther("50000");
+
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
+    );
+
+    await expect(
+        treasury.distributeCommunity(
+            distributionAmount
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        1,
+        addr2.address,
+        distributionAmount
+    );
 
 });
 
@@ -478,26 +502,24 @@ it("Should not distribute more Liquidity tokens than the treasury balance", asyn
 
 it("Should emit TokensDistributed event for Liquidity", async function () {
 
-    const fundingAmount = ethers.parseEther("1000000");
+    const distributionAmount =
+        ethers.parseEther("50000");
 
-    await lgc.transfer(
-        await treasury.getAddress(),
-        fundingAmount
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
     );
 
-    const distributionAmount = ethers.parseEther("50000");
-
     await expect(
-
-        treasury.distributeLiquidity(distributionAmount)
-
-    )
-        .to.emit(treasury, "TokensDistributed")
-        .withArgs(
-            "Liquidity",
-            addr3.address,
+        treasury.distributeLiquidity(
             distributionAmount
-        );
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        2,
+        addr3.address,
+        distributionAmount
+    );
 
 });
 
@@ -591,26 +613,24 @@ it("Should not distribute more Development tokens than the treasury balance", as
 
 it("Should emit TokensDistributed event for Development", async function () {
 
-    const fundingAmount = ethers.parseEther("1000000");
+    const distributionAmount =
+        ethers.parseEther("50000");
 
-    await lgc.transfer(
-        await treasury.getAddress(),
-        fundingAmount
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
     );
 
-    const distributionAmount = ethers.parseEther("50000");
-
     await expect(
-
-        treasury.distributeDevelopment(distributionAmount)
-
-    )
-        .to.emit(treasury, "TokensDistributed")
-        .withArgs(
-            "Development",
-            addr4.address,
+        treasury.distributeDevelopment(
             distributionAmount
-        );
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        3,
+        addr4.address,
+        distributionAmount
+    );
 
 });
 
@@ -704,26 +724,24 @@ it("Should not distribute more Reserve tokens than the treasury balance", async 
 
 it("Should emit TokensDistributed event for Reserve", async function () {
 
-    const fundingAmount = ethers.parseEther("1000000");
+    const distributionAmount =
+        ethers.parseEther("50000");
 
-    await lgc.transfer(
-        await treasury.getAddress(),
-        fundingAmount
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
     );
 
-    const distributionAmount = ethers.parseEther("50000");
-
     await expect(
-
-        treasury.distributeReserve(distributionAmount)
-
-    )
-        .to.emit(treasury, "TokensDistributed")
-        .withArgs(
-            "Reserve",
-            addr5.address,
+        treasury.distributeReserve(
             distributionAmount
-        );
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        4,
+        addr5.address,
+        distributionAmount
+    );
 
 });
 
@@ -815,28 +833,27 @@ it("Should not distribute more Team tokens than the treasury balance", async fun
 
 });
 
+
 it("Should emit TokensDistributed event for Team", async function () {
 
-    const fundingAmount = ethers.parseEther("1000000");
+    const distributionAmount =
+        ethers.parseEther("50000");
 
-    await lgc.transfer(
-        await treasury.getAddress(),
-        fundingAmount
+    await treasury.fundTreasury(
+        ethers.parseEther("1000000")
     );
 
-    const distributionAmount = ethers.parseEther("50000");
-
     await expect(
-
-        treasury.distributeTeam(distributionAmount)
-
-    )
-        .to.emit(treasury, "TokensDistributed")
-        .withArgs(
-            "Team",
-            addr6.address,
+        treasury.distributeTeam(
             distributionAmount
-        );
+        )
+    )
+    .to.emit(treasury, "TokensDistributed")
+    .withArgs(
+        5,
+        addr6.address,
+        distributionAmount
+    );
 
 });
 

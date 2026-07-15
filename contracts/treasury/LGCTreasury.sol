@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title Living God Coin Treasury
 /// @author Living God Ecosystem
@@ -40,7 +40,7 @@ struct AllocationInfo {
     IERC20 public immutable lgcToken;
 
     /// @notice Treasury contract version.
-string public constant VERSION = "1.0.0";
+string public constant VERSION = "1.1.0";
 
 /// @notice Timestamp when the treasury was deployed.
 uint256 public immutable deployedAt;
@@ -90,11 +90,11 @@ uint256 public immutable deployedAt;
     /// Events
     /// -----------------------------------------------------------------------
 
-    event TokensDistributed(
-        string indexed category,
-        address indexed recipient,
-        uint256 amount
-    );
+  event TokensDistributed(
+    AllocationType indexed allocation,
+    address indexed recipient,
+    uint256 amount
+);
 
     event WalletUpdated(
     string indexed category,
@@ -121,6 +121,11 @@ event RecoveredETH(
     uint256 amount
 );
 
+event TreasuryFunded(
+    address indexed from,
+    uint256 amount
+);
+
 /// -----------------------------------------------------------------------
 /// Custom Errors
 /// -----------------------------------------------------------------------
@@ -137,7 +142,7 @@ error TeamAllocationExceeded();
 error CannotRecoverLGC();
 error InvalidAllocation();
 error ETHTransferFailed();
-
+error InvalidAmount();
 
 /// @notice Ensures a wallet address is valid.
 modifier validAddress(address newWallet) {
@@ -180,6 +185,24 @@ function unpause()
 
         if (address(tokenAddress) == address(0))
     revert InvalidToken();
+
+    if (_ecosystemWallet == address(0))
+    revert InvalidWallet();
+
+if (_communityWallet == address(0))
+    revert InvalidWallet();
+
+if (_liquidityWallet == address(0))
+    revert InvalidWallet();
+
+if (_developmentWallet == address(0))
+    revert InvalidWallet();
+
+if (_reserveWallet == address(0))
+    revert InvalidWallet();
+
+if (_teamWallet == address(0))
+    revert InvalidWallet();
 
         lgcToken = tokenAddress;
         deployedAt = block.timestamp;
@@ -350,18 +373,23 @@ function _distribute(
     if (allocationType == AllocationType.Reserve)
         revert ReserveAllocationExceeded();
 
+
     revert TeamAllocationExceeded();
 }
+
+    if (amount == 0)
+    revert InvalidAmount(); 
+
     if (lgcToken.balanceOf(address(this)) < amount)
         revert InsufficientTreasuryBalance();
-
+   
     lgcToken.safeTransfer(
         recipient,
         amount
     );
 
-    emit TokensDistributed(
-    _allocationName(allocationType),
+emit TokensDistributed(
+    allocationType,
     recipient,
     amount
 );
@@ -371,7 +399,7 @@ function _distribute(
 
     /// @notice Distributes Ecosystem Treasury tokens.
 /// @param amount Amount of LGC to distribute.
-/// @notice Distributes Ecosystem Treasury tokens.
+
 function distributeEcosystem(uint256 amount)
     external
     onlyOwner
@@ -560,6 +588,9 @@ function recoverERC20(
 {
     if (address(token) == address(lgcToken))
     revert CannotRecoverLGC();
+    
+    if (amount == 0)
+    revert InvalidAmount();
 
     token.safeTransfer(
         recipient,
@@ -599,6 +630,29 @@ if (!success)
         amount
     );
 }
+
+/// @notice Allows anyone to fund the treasury.
+function fundTreasury(
+    uint256 amount
+)
+    external
+    nonReentrant
+{
+    if (amount == 0)
+        revert InvalidAmount();
+
+    lgcToken.safeTransferFrom(
+        msg.sender,
+        address(this),
+        amount
+    );
+
+    emit TreasuryFunded(
+        msg.sender,
+        amount
+    );
+}
+
 /// -----------------------------------------------------------------------
 /// Dashboard Functions
 /// -----------------------------------------------------------------------
@@ -745,6 +799,7 @@ function distributedAmounts()
         teamDistributed
     );
 }
+
 
 /// @notice Returns all remaining allocations.
 function remainingAllocations()
@@ -971,4 +1026,21 @@ function getAllAllocations()
         team.exhausted
     ) = getAllocationInfo(AllocationType.Team);
 }
+
+/// @notice Returns the treasury health.
+function treasuryHealth()
+    public
+    view
+    returns (
+        bool healthy,
+        uint256 percentageRemaining
+    )
+{
+    percentageRemaining =
+        (treasuryBalance() * 100) /
+        totalAllocation();
+
+    healthy = treasuryBalance() > 0;
+}
+
 }
