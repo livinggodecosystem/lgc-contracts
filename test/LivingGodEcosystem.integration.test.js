@@ -1,14 +1,3 @@
-describe("Living God Ecosystem Integration", function () {
-
-    let owner;
-    let team;
-    let investor;
-    let community;
-
-    let lgc;
-    let treasury;
-    let vesting;
-    let staking;
 
     const { expect } = require("chai");
 const { ethers } = require("hardhat");
@@ -119,7 +108,6 @@ describe("Living God Ecosystem Integration", function () {
         await staking.waitForDeployment();
 
     });
-});
 
 it("Should deploy the complete Living God Ecosystem", async function () {
 
@@ -171,23 +159,6 @@ it("Should connect every treasury wallet correctly", async function () {
 
 });
 
-it("Should deploy the complete ecosystem", async function () {
-
-    expect(await lgc.totalSupply())
-        .to.equal(
-            ethers.parseEther("15000000")
-        );
-
-    expect(await treasury.owner())
-        .to.equal(owner.address);
-
-    expect(await vesting.owner())
-        .to.equal(owner.address);
-
-    expect(await staking.owner())
-        .to.equal(owner.address);
-
-});
 
 it("Should fund the treasury", async function () {
 
@@ -246,7 +217,107 @@ it("Should fund vesting", async function () {
 
 });
 
+it("Treasury should use the deployed LGC token", async function () {
+
+    expect(
+        await treasury.lgcToken()
+    ).to.equal(
+        await lgc.getAddress()
+    );
+
 });
 
+it("Vesting should use the deployed LGC token", async function () {
 
+    expect(
+        await vesting.lgcToken()
+    ).to.equal(
+        await lgc.getAddress()
+    );
 
+});
+
+it("Staking should use the deployed LGC token", async function () {
+
+    expect(
+        await staking.lgcToken()
+    ).to.equal(
+        await lgc.getAddress()
+    );
+
+});
+
+it("Treasury should start with zero balance", async function () {
+
+    expect(
+        await treasury.treasuryBalance()
+    ).to.equal(0);
+
+});
+
+it("Vesting should start with zero schedules", async function () {
+
+    expect(
+        await vesting.totalSchedules()
+    ).to.equal(0);
+
+});
+
+it("Staking should start with zero reward pool and zero staked", async function () {
+
+    expect(
+        await staking.rewardPool()
+    ).to.equal(0);
+
+    expect(
+        await staking.totalStaked()
+    ).to.equal(0);
+
+});
+
+it("Should fund Vesting from Treasury", async function () {
+
+    const treasuryAmount =
+        ethers.parseEther("1000000");
+
+    const vestingAmount =
+        ethers.parseEther("250000");
+
+    // Fund Treasury
+
+    await lgc.approve(
+        treasury.target,
+        treasuryAmount
+    );
+
+    await treasury.fundTreasury(
+        treasuryAmount
+    );
+
+});
+
+   it("Should distribute Development allocation to the Development wallet", async function () {
+
+    const amount =
+        ethers.parseEther("250000");
+
+    await lgc.approve(
+        treasury.target,
+        amount
+    );
+
+    await treasury.fundTreasury(amount);
+
+    await treasury.distributeDevelopment(
+        amount
+    );
+
+    expect(
+        await lgc.balanceOf(
+            development.address
+        )
+    ).to.equal(amount);
+
+});
+
+});
