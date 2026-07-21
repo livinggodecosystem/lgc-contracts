@@ -9,22 +9,32 @@ function loadDeployment(networkName) {
         `${networkName}.json`
     );
 
-    if (!fs.existsSync(filePath)) {
+    //-------------------------------------------------
+    // Existing deployment
+    //-------------------------------------------------
 
-        throw new Error(
-            `Deployment file not found for network: ${networkName}`
+    if (fs.existsSync(filePath)) {
+
+        console.log("");
+        console.log("📂 Existing deployment found.");
+
+        return JSON.parse(
+            fs.readFileSync(
+                filePath,
+                "utf8"
+            )
         );
 
     }
 
-    return JSON.parse(
+    //-------------------------------------------------
+    // Fresh deployment
+    //-------------------------------------------------
 
-        fs.readFileSync(
-            filePath,
-            "utf8"
-        )
+    console.log("");
+    console.log("📂 Starting fresh deployment.");
 
-    );
+    return {};
 
 }
 

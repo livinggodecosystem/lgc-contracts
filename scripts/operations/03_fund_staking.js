@@ -4,11 +4,14 @@ const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
+const tokenomics =
+    require("../../config/tokenomics");
+
 async function main() {
 
-    //---------------------------------------
-    // Load Deployment Addresses
-    //---------------------------------------
+    //-------------------------------------------------
+    // Load Deployment
+    //-------------------------------------------------
 
     const deploymentPath = path.join(
         __dirname,
@@ -17,34 +20,43 @@ async function main() {
     );
 
     if (!fs.existsSync(deploymentPath)) {
+
         throw new Error(
             `Deployment file not found:\n${deploymentPath}`
         );
+
     }
 
     const deployment = JSON.parse(
         fs.readFileSync(deploymentPath)
     );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Accounts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const [deployer] =
         await ethers.getSigners();
 
     console.log("");
     console.log("=====================================");
-    console.log(" FUND STAKING");
+    console.log(" FUND STAKING REWARDS");
     console.log("=====================================");
     console.log("");
 
-    console.log("Network:", hre.network.name);
-    console.log("Deployer:", deployer.address);
+    console.log(
+        "Network:",
+        hre.network.name
+    );
 
-    //---------------------------------------
+    console.log(
+        "Operator:",
+        deployer.address
+    );
+
+    //-------------------------------------------------
     // Contracts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const lgc =
         await ethers.getContractAt(
@@ -58,22 +70,24 @@ async function main() {
             deployment.LGCStaking
         );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Funding Amount
-    //---------------------------------------
+    //-------------------------------------------------
 
     const amount =
         ethers.parseUnits(
-            "2000000",
+            tokenomics.STAKING_REWARDS.toString(),
             18
         );
 
     console.log("");
-    console.log("Funding Staking...");
+    console.log(
+        "Funding Staking Rewards..."
+    );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Transfer
-    //---------------------------------------
+    //-------------------------------------------------
 
     const tx =
         await lgc.transfer(
@@ -83,9 +97,9 @@ async function main() {
 
     await tx.wait();
 
-    //---------------------------------------
-    // Balance
-    //---------------------------------------
+    //-------------------------------------------------
+    // Verify Balance
+    //-------------------------------------------------
 
     const balance =
         await lgc.balanceOf(
@@ -95,17 +109,17 @@ async function main() {
     console.log("");
 
     console.log(
-        "Staking Balance:",
-        ethers.formatUnits(
-            balance,
-            18
-        ),
-        "LGC"
+        "Staking Rewards Balance:"
+    );
+
+    console.log(
+        `${ethers.formatUnits(balance, 18)} LGC`
     );
 
     console.log("");
+
     console.log("=====================================");
-    console.log(" STAKING FUNDED");
+    console.log(" STAKING REWARDS FUNDED");
     console.log("=====================================");
     console.log("");
 }

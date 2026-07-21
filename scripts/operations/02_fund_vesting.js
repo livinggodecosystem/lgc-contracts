@@ -4,11 +4,14 @@ const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
+const tokenomics =
+    require("../../config/tokenomics");
+
 async function main() {
 
-    //---------------------------------------
-    // Load Deployment Addresses
-    //---------------------------------------
+    //-------------------------------------------------
+    // Load Deployment
+    //-------------------------------------------------
 
     const deploymentPath = path.join(
         __dirname,
@@ -17,18 +20,20 @@ async function main() {
     );
 
     if (!fs.existsSync(deploymentPath)) {
+
         throw new Error(
             `Deployment file not found:\n${deploymentPath}`
         );
+
     }
 
     const deployment = JSON.parse(
         fs.readFileSync(deploymentPath)
     );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Accounts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const [deployer] =
         await ethers.getSigners();
@@ -39,12 +44,19 @@ async function main() {
     console.log("=====================================");
     console.log("");
 
-    console.log("Network:", hre.network.name);
-    console.log("Deployer:", deployer.address);
+    console.log(
+        "Network:",
+        hre.network.name
+    );
 
-    //---------------------------------------
+    console.log(
+        "Operator:",
+        deployer.address
+    );
+
+    //-------------------------------------------------
     // Contracts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const lgc =
         await ethers.getContractAt(
@@ -52,7 +64,7 @@ async function main() {
             deployment.LivingGodCoin
         );
 
-    const generalVesting =
+    const startupFund =
         await ethers.getContractAt(
             "LGCVesting",
             deployment.LGCVesting
@@ -70,38 +82,51 @@ async function main() {
             deployment.LGCInvestorVesting
         );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Funding Amounts
-    //---------------------------------------
+    //-------------------------------------------------
 
-    const generalAmount =
-        ethers.parseUnits("2000000", 18);
+    const startupAmount =
+        ethers.parseUnits(
+            tokenomics.STARTUP_FUND.toString(),
+            18
+        );
 
     const teamAmount =
-        ethers.parseUnits("1000000", 18);
+        ethers.parseUnits(
+            tokenomics.TEAM_VESTING.toString(),
+            18
+        );
 
     const investorAmount =
-        ethers.parseUnits("3000000", 18);
+        ethers.parseUnits(
+            tokenomics.INVESTOR_VESTING.toString(),
+            18
+        );
 
-    //---------------------------------------
-    // Fund General Vesting
-    //---------------------------------------
+    //-------------------------------------------------
+    // Fund Startup Fund
+    //-------------------------------------------------
 
     console.log("");
-    console.log("Funding General Vesting...");
+    console.log(
+        "Funding Startup Fund..."
+    );
 
     await (
         await lgc.transfer(
-            await generalVesting.getAddress(),
-            generalAmount
+            await startupFund.getAddress(),
+            startupAmount
         )
     ).wait();
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Fund Team Vesting
-    //---------------------------------------
+    //-------------------------------------------------
 
-    console.log("Funding Team Vesting...");
+    console.log(
+        "Funding Team Vesting..."
+    );
 
     await (
         await lgc.transfer(
@@ -110,11 +135,13 @@ async function main() {
         )
     ).wait();
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Fund Investor Vesting
-    //---------------------------------------
+    //-------------------------------------------------
 
-    console.log("Funding Investor Vesting...");
+    console.log(
+        "Funding Investor Vesting..."
+    );
 
     await (
         await lgc.transfer(
@@ -123,13 +150,13 @@ async function main() {
         )
     ).wait();
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Display Balances
-    //---------------------------------------
+    //-------------------------------------------------
 
-    const generalBalance =
+    const startupBalance =
         await lgc.balanceOf(
-            await generalVesting.getAddress()
+            await startupFund.getAddress()
         );
 
     const teamBalance =
@@ -145,24 +172,19 @@ async function main() {
     console.log("");
 
     console.log(
-        "General Vesting:",
-        ethers.formatUnits(generalBalance, 18),
-        "LGC"
+        `Startup Fund: ${ethers.formatUnits(startupBalance, 18)} LGC`
     );
 
     console.log(
-        "Team Vesting:",
-        ethers.formatUnits(teamBalance, 18),
-        "LGC"
+        `Team Vesting: ${ethers.formatUnits(teamBalance, 18)} LGC`
     );
 
     console.log(
-        "Investor Vesting:",
-        ethers.formatUnits(investorBalance, 18),
-        "LGC"
+        `Investor Vesting: ${ethers.formatUnits(investorBalance, 18)} LGC`
     );
 
     console.log("");
+
     console.log("=====================================");
     console.log(" VESTING CONTRACTS FUNDED");
     console.log("=====================================");

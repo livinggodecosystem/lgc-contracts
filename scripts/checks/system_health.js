@@ -6,9 +6,9 @@ const path = require("path");
 
 async function main() {
 
-    //----------------------------------
-    // Load deployment file
-    //----------------------------------
+    //-------------------------------------------------
+    // Load Deployment
+    //-------------------------------------------------
 
     const deploymentPath = path.join(
         __dirname,
@@ -17,18 +17,20 @@ async function main() {
     );
 
     if (!fs.existsSync(deploymentPath)) {
+
         throw new Error(
             `Deployment file not found:\n${deploymentPath}`
         );
+
     }
 
     const deployment = JSON.parse(
         fs.readFileSync(deploymentPath)
     );
 
-    //----------------------------------
-    // Load contracts
-    //----------------------------------
+    //-------------------------------------------------
+    // Contracts
+    //-------------------------------------------------
 
     const lgc =
         await ethers.getContractAt(
@@ -42,25 +44,25 @@ async function main() {
             deployment.LGCLaunchRegistry
         );
 
-    const treasury =
+    const ecosystemReserve =
         await ethers.getContractAt(
             "LGCTreasury",
             deployment.LGCTreasury
         );
 
-    const vesting =
+    const startupFund =
         await ethers.getContractAt(
             "LGCVesting",
             deployment.LGCVesting
         );
 
-    const team =
+    const teamVesting =
         await ethers.getContractAt(
             "LGCTeamVesting",
             deployment.LGCTeamVesting
         );
 
-    const investor =
+    const investorVesting =
         await ethers.getContractAt(
             "LGCInvestorVesting",
             deployment.LGCInvestorVesting
@@ -72,9 +74,9 @@ async function main() {
             deployment.LGCStaking
         );
 
-    //----------------------------------
+    //-------------------------------------------------
     // Header
-    //----------------------------------
+    //-------------------------------------------------
 
     console.log("");
     console.log("=====================================");
@@ -83,9 +85,9 @@ async function main() {
     console.log("=====================================");
     console.log("");
 
-    //----------------------------------
-    // Contract availability
-    //----------------------------------
+    //-------------------------------------------------
+    // Contract Status
+    //-------------------------------------------------
 
     console.log(
         "Living God Coin      ✅",
@@ -98,90 +100,95 @@ async function main() {
     );
 
     console.log(
-        "Treasury             ✅",
-        await treasury.getAddress()
+        "Ecosystem Reserve    ✅",
+        await ecosystemReserve.getAddress()
     );
 
     console.log(
-        "General Vesting      ✅",
-        await vesting.getAddress()
+        "Startup Fund         ✅",
+        await startupFund.getAddress()
     );
 
     console.log(
         "Team Vesting         ✅",
-        await team.getAddress()
+        await teamVesting.getAddress()
     );
 
     console.log(
         "Investor Vesting     ✅",
-        await investor.getAddress()
+        await investorVesting.getAddress()
     );
 
     console.log(
-        "Staking              ✅",
+        "Staking Rewards      ✅",
         await staking.getAddress()
     );
 
-    //----------------------------------
+    //-------------------------------------------------
     // Balances
-    //----------------------------------
+    //-------------------------------------------------
 
     console.log("");
     console.log("----------- BALANCES -----------");
 
     console.log(
-        "Treasury:",
-        ethers.formatEther(
+        "Ecosystem Reserve:",
+        ethers.formatUnits(
             await lgc.balanceOf(
-                await treasury.getAddress()
-            )
+                await ecosystemReserve.getAddress()
+            ),
+            18
         ),
         "LGC"
     );
 
     console.log(
-        "General Vesting:",
-        ethers.formatEther(
+        "Startup Fund:",
+        ethers.formatUnits(
             await lgc.balanceOf(
-                await vesting.getAddress()
-            )
+                await startupFund.getAddress()
+            ),
+            18
         ),
         "LGC"
     );
 
     console.log(
         "Team Vesting:",
-        ethers.formatEther(
+        ethers.formatUnits(
             await lgc.balanceOf(
-                await team.getAddress()
-            )
+                await teamVesting.getAddress()
+            ),
+            18
         ),
         "LGC"
     );
 
     console.log(
         "Investor Vesting:",
-        ethers.formatEther(
+        ethers.formatUnits(
             await lgc.balanceOf(
-                await investor.getAddress()
-            )
+                await investorVesting.getAddress()
+            ),
+            18
         ),
         "LGC"
     );
 
     console.log(
-        "Staking:",
-        ethers.formatEther(
+        "Staking Rewards:",
+        ethers.formatUnits(
             await lgc.balanceOf(
                 await staking.getAddress()
-            )
+            ),
+            18
         ),
         "LGC"
     );
 
-    //----------------------------------
-    // Launch Status
-    //----------------------------------
+    //-------------------------------------------------
+    // Genesis Status
+    //-------------------------------------------------
 
     console.log("");
     console.log("----------- GENESIS -----------");
@@ -205,17 +212,19 @@ async function main() {
                 Number(launchTime) * 1000
             ).toUTCString()
         );
+
     }
 
-    //----------------------------------
+    //-------------------------------------------------
     // Footer
-    //----------------------------------
+    //-------------------------------------------------
 
     console.log("");
     console.log("=====================================");
     console.log(" SYSTEM HEALTHY");
     console.log("=====================================");
     console.log("");
+
 }
 
 main()

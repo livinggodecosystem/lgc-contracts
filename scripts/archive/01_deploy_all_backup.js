@@ -1,21 +1,11 @@
 const hre = require("hardhat");
-
 const { ethers } = hre;
 
 const {
     saveDeployment
 } = require("../utils/saveDeployment");
 
-const {
-    loadDeployment
-} = require("../utils/loadDeployment");
-
-const {
-    deployIfNeeded
-} = require("../utils/deployIfNeeded");
-
 const wallets = require("../../config/wallets");
-
 const tokenomics = require("../../config/tokenomics");
 
 async function main() {
@@ -80,229 +70,253 @@ const teamWallet =
     // Deployment Object
     //-------------------------------------------------
 
-    const deployment =
-    loadDeployment(
-        hre.network.name
-    );
+    const deployment = {};
 
     //-------------------------------------------------
 // Deploy Living God Coin
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Living God Coin...");
 
 const LivingGodCoin =
     await ethers.getContractFactory(
         "LivingGodCoin"
     );
 
+const lgc =
+    await LivingGodCoin.deploy();
+
+await lgc.waitForDeployment();
+
 const lgcAddress =
-    await deployIfNeeded({
+    await lgc.getAddress();
 
-        name: "LivingGodCoin",
+deployment.LivingGodCoin =
+    lgcAddress;
 
-        deployment,
-
-        network: hre.network.name,
-
-        contractFactory: LivingGodCoin
-
-    });
+console.log(
+    "Living God Coin:",
+    lgcAddress
+);
 
 //-------------------------------------------------
 // Deploy Launch Registry
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Launch Registry...");
 
 const LGCLaunchRegistry =
     await ethers.getContractFactory(
         "LGCLaunchRegistry"
     );
 
+const launchRegistry =
+    await LGCLaunchRegistry.deploy(
+        deployer.address
+    );
+
+await launchRegistry.waitForDeployment();
+
 const launchRegistryAddress =
-    await deployIfNeeded({
+    await launchRegistry.getAddress();
 
-        name: "LGCLaunchRegistry",
+deployment.LGCLaunchRegistry =
+    launchRegistryAddress;
 
-        deployment,
+console.log(
+    "Launch Registry:",
+    launchRegistryAddress
+);
 
-        network: hre.network.name,
-
-        contractFactory: LGCLaunchRegistry,
-
-        constructorArgs: [
-
-            deployer.address
-
-        ]
-
-    });
-
-    //-------------------------------------------------
+//-------------------------------------------------
 // Deploy Treasury
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Treasury...");
 
 const LGCTreasury =
     await ethers.getContractFactory(
         "LGCTreasury"
     );
 
+const treasury =
+    await LGCTreasury.deploy(
+
+        deployer.address,
+
+        lgcAddress,
+
+        ecosystemWallet,
+
+        communityWallet,
+
+        liquidityWallet,
+
+        developmentWallet,
+
+        reserveWallet,
+
+        teamWallet
+
+    );
+
+await treasury.waitForDeployment();
+
 const treasuryAddress =
-    await deployIfNeeded({
+    await treasury.getAddress();
 
-        name: "LGCTreasury",
+deployment.LGCTreasury =
+    treasuryAddress;
 
-        deployment,
+console.log(
+    "Treasury:",
+    treasuryAddress
+);
 
-        network: hre.network.name,
-
-        contractFactory: LGCTreasury,
-
-        constructorArgs: [
-
-            deployer.address,
-
-            lgcAddress,
-
-            ecosystemWallet,
-
-            communityWallet,
-
-            liquidityWallet,
-
-            developmentWallet,
-
-            reserveWallet,
-
-            teamWallet
-
-        ]
-
-    });
 //-------------------------------------------------
 // Deploy General Vesting
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying General Vesting...");
 
 const LGCVesting =
     await ethers.getContractFactory(
         "LGCVesting"
     );
 
+const vesting =
+    await LGCVesting.deploy(
+
+        deployer.address,
+
+        lgcAddress
+
+    );
+
+await vesting.waitForDeployment();
+
 const vestingAddress =
-    await deployIfNeeded({
+    await vesting.getAddress();
 
-        name: "LGCVesting",
+deployment.LGCVesting =
+    vestingAddress;
 
-        deployment,
+console.log(
+    "General Vesting:",
+    vestingAddress
+);
 
-        network: hre.network.name,
-
-        contractFactory: LGCVesting,
-
-        constructorArgs: [
-
-            deployer.address,
-
-            lgcAddress
-
-        ]
-
-    });
-
-    //-------------------------------------------------
+//-------------------------------------------------
 // Deploy Team Vesting
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Team Vesting...");
 
 const LGCTeamVesting =
     await ethers.getContractFactory(
         "LGCTeamVesting"
     );
 
+const teamVesting =
+    await LGCTeamVesting.deploy(
+
+        deployer.address,
+
+        lgcAddress,
+
+        launchRegistryAddress,
+
+        teamWallet
+
+    );
+
+await teamVesting.waitForDeployment();
+
 const teamVestingAddress =
-    await deployIfNeeded({
+    await teamVesting.getAddress();
 
-        name: "LGCTeamVesting",
+deployment.LGCTeamVesting =
+    teamVestingAddress;
 
-        deployment,
+console.log(
+    "Team Vesting:",
+    teamVestingAddress
+);
 
-        network: hre.network.name,
-
-        contractFactory: LGCTeamVesting,
-
-        constructorArgs: [
-
-            deployer.address,
-
-            lgcAddress,
-
-            launchRegistryAddress,
-
-            teamWallet
-
-        ]
-
-    });
-
- //-------------------------------------------------
+//-------------------------------------------------
 // Deploy Investor Vesting
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Investor Vesting...");
 
 const LGCInvestorVesting =
     await ethers.getContractFactory(
         "LGCInvestorVesting"
     );
 
+const investorVesting =
+    await LGCInvestorVesting.deploy(
+
+        deployer.address,
+
+        lgcAddress,
+
+        launchRegistryAddress
+
+    );
+
+await investorVesting.waitForDeployment();
+
 const investorVestingAddress =
-    await deployIfNeeded({
+    await investorVesting.getAddress();
 
-        name: "LGCInvestorVesting",
+deployment.LGCInvestorVesting =
+    investorVestingAddress;
 
-        deployment,
+console.log(
+    "Investor Vesting:",
+    investorVestingAddress
+);
 
-        network: hre.network.name,
-
-        contractFactory: LGCInvestorVesting,
-
-        constructorArgs: [
-
-            deployer.address,
-
-            lgcAddress,
-
-            launchRegistryAddress
-
-        ]
-
-    });
-
-
-    //-------------------------------------------------
+//-------------------------------------------------
 // Deploy Staking
 //-------------------------------------------------
+
+console.log("");
+console.log("Deploying Staking...");
 
 const LGCStaking =
     await ethers.getContractFactory(
         "LGCStaking"
     );
 
+const staking =
+    await LGCStaking.deploy(
+
+        deployer.address,
+
+        lgcAddress
+
+    );
+
+await staking.waitForDeployment();
+
 const stakingAddress =
-    await deployIfNeeded({
+    await staking.getAddress();
 
-        name: "LGCStaking",
+deployment.LGCStaking =
+    stakingAddress;
 
-        deployment,
-
-        network: hre.network.name,
-
-        contractFactory: LGCStaking,
-
-        constructorArgs: [
-
-            deployer.address,
-
-            lgcAddress
-
-        ]
-
-    });
-
+console.log(
+    "Staking:",
+    stakingAddress
+);
 
 //-------------------------------------------------
 // Save Deployment

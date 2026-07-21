@@ -4,11 +4,14 @@ const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
+const tokenomics =
+    require("../../config/tokenomics");
+
 async function main() {
 
-    //---------------------------------------
-    // Load Deployment Addresses
-    //---------------------------------------
+    //-------------------------------------------------
+    // Load Deployment
+    //-------------------------------------------------
 
     const deploymentPath = path.join(
         __dirname,
@@ -17,26 +20,27 @@ async function main() {
     );
 
     if (!fs.existsSync(deploymentPath)) {
+
         throw new Error(
-            `Deployment file not found:
-${deploymentPath}`
+            `Deployment file not found:\n${deploymentPath}`
         );
+
     }
 
     const deployment = JSON.parse(
         fs.readFileSync(deploymentPath)
     );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Accounts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const [deployer] =
         await ethers.getSigners();
 
     console.log("");
     console.log("=====================================");
-    console.log(" FUND TREASURY");
+    console.log(" FUND ECOSYSTEM RESERVE");
     console.log("=====================================");
     console.log("");
 
@@ -46,79 +50,76 @@ ${deploymentPath}`
     );
 
     console.log(
-        "Deployer:",
+        "Operator:",
         deployer.address
     );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Contracts
-    //---------------------------------------
+    //-------------------------------------------------
 
     const lgc =
         await ethers.getContractAt(
             "LivingGodCoin",
             deployment.LivingGodCoin
         );
-    
 
-    const treasury =
+    const ecosystemReserve =
         await ethers.getContractAt(
             "LGCTreasury",
             deployment.LGCTreasury
         );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Amount
-    //---------------------------------------
+    //-------------------------------------------------
 
     const amount =
         ethers.parseUnits(
-            "1000000",
+            tokenomics.ECOSYSTEM_RESERVE.toString(),
             18
         );
 
     console.log("");
     console.log(
-        "Funding Treasury..."
+        "Funding Ecosystem Reserve..."
     );
 
-    //---------------------------------------
+    //-------------------------------------------------
     // Transfer
-    //---------------------------------------
+    //-------------------------------------------------
 
     const tx =
         await lgc.transfer(
-            await treasury.getAddress(),
+            await ecosystemReserve.getAddress(),
             amount
         );
 
     await tx.wait();
 
-    //---------------------------------------
-    // Balance
-    //---------------------------------------
+    //-------------------------------------------------
+    // Verify Balance
+    //-------------------------------------------------
 
     const balance =
         await lgc.balanceOf(
-            await treasury.getAddress()
+            await ecosystemReserve.getAddress()
         );
 
     console.log("");
+
     console.log(
-        "Treasury Balance:"
+        "Ecosystem Reserve Balance:"
     );
 
     console.log(
-        ethers.formatUnits(
-            balance,
-            18
-        ),
-        "LGC"
+        `${ethers.formatUnits(balance, 18)} LGC`
     );
 
     console.log("");
+
     console.log("=====================================");
-    console.log(" Treasury Funded");
+    console.log(" ECOSYSTEM RESERVE FUNDED");
     console.log("=====================================");
     console.log("");
 }
