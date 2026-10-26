@@ -70,7 +70,7 @@ struct RewardPoolStats {
     uint256 public totalRewardsPaid;
 
     uint256 public activeStakers;
-    
+
     /// @notice Total rewards ever funded into the protocol.
     uint256 public totalRewardsFunded;
 
@@ -97,7 +97,7 @@ struct RewardPoolStats {
 
     mapping(bytes32 => bool) public poolNameExists;
 
-  
+
 uint256 public totalPools;
 
         /// -----------------------------------------------------------------------
@@ -277,7 +277,7 @@ totalPools = 5;
 
 deployedAt = block.timestamp;
     }
-    
+
 
     /// @notice Creates a new staking pool.
 function createPool(
@@ -292,7 +292,7 @@ function createPool(
 
     if (rewardRate == 0)
     revert InvalidRewardRate();
-    
+
 
     if (name == bytes32(0))
     revert InvalidPool();
@@ -609,7 +609,7 @@ function setPoolActive(
     function getUserStakeIds(
         address user
     )
-        external 
+        external
         view
         returns (uint256[] memory)
     {
@@ -670,7 +670,7 @@ if (userStake.active) {
 
     if (!stakingPools[poolId].active)
     revert PoolInactive();
-        
+
         if (amount == 0)
             revert InvalidAmount();
 
@@ -721,7 +721,7 @@ function stake(
     nonReentrant
 {
     _stake(0, amount);
-  
+
 }
 
 /// @notice Stakes into the default Flexible Pool.
@@ -862,7 +862,7 @@ function claimRewards(
             revert NotStakeOwner();
 
         if (!isStakeUnlocked(stakeId))
-    revert StakeStillLocked();    
+    revert StakeStillLocked();
 
         // Automatically claim any pending rewards
         // Calculate once, before closing the position. Principal never depends on reward liquidity.
