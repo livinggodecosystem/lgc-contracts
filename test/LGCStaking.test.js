@@ -1363,6 +1363,80 @@ it("Should update dashboard after funding the reward pool", async function () {
 
 
 
+
+it("Should demonstrate legacy withdrawal recovery after reward funding", async function () {
+  const principal = ethers.parseEther("100");
+  const funding = ethers.parseEther("10");
+  const stakingAddress = await staking.getAddress();
+
+  // Create a local test position.
+  await lgc.transfer(alice.address, principal);
+
+  await lgc
+    .connect(alice)
+    .approve(stakingAddress, principal);
+
+  await staking.connect(alice).stake(principal);
+
+  expect(await staking.getTotalStaked())
+    .to.equal(principal);
+
+  expect(await staking.activeStakers())
+    .to.equal(1n);
+
+  // Allow one day of rewards to accumulate.
+  await time.increase(24 * 60 * 60);
+
+  const pending =
+    await staking.calculateRewards(0);
+
+  expect(pending).to.be.gt(0n);
+
+  expect(await staking.getRewardPool())
+    .to.equal(0n);
+
+  // Reproduce the deployed legacy withdrawal blocker.
+  await expect(
+    staking.connect(alice).unstake(0)
+  ).to.be.revertedWithCustomError(
+    staking,
+    "InsufficientRewardPool"
+  );
+
+  // A reverted withdrawal must preserve principal.
+  expect(await staking.getTotalStaked())
+    .to.equal(principal);
+
+  expect((await staking.getStake(0))[6])
+    .to.equal(true);
+
+  // Local owner funds the reward reserve.
+  await lgc.approve(stakingAddress, funding);
+
+  await staking.fundRewardPool(funding);
+
+  expect(await staking.getRewardPool())
+    .to.equal(funding);
+
+  // Rehearse successful principal and reward recovery.
+  await staking.connect(alice).unstake(0);
+
+  expect(await staking.getTotalStaked())
+    .to.equal(0n);
+
+  expect(await staking.activeStakers())
+    .to.equal(0n);
+
+  expect((await staking.getStake(0))[6])
+    .to.equal(false);
+
+  expect(await lgc.balanceOf(alice.address))
+    .to.be.gt(principal);
+
+  expect(await staking.totalRewardsPaid())
+    .to.be.gt(0n);
+});
+
 it("Should track distinct active stakers through exits", async function () {
   const amount = ethers.parseEther("10");
   const stakingAddress = await staking.getAddress();
