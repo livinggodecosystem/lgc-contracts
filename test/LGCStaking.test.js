@@ -1364,6 +1364,172 @@ it("Should update dashboard after funding the reward pool", async function () {
 
 
 
+it("V2 prioritizes deferred liabilities over new live reward claims", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const owner = await staking.owner();
+  const v2 = await V2.deploy(owner, await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  const accounts = await ethers.getSigners();
+  const bob = accounts.find(s => s.address.toLowerCase() !== alice.address.toLowerCase()
+    && s.address.toLowerCase() !== owner.toLowerCase());
+  expect(bob).not.to.equal(undefined);
+
+  await lgc.transfer(alice.address, principal);
+  await lgc.transfer(bob.address, principal);
+  await lgc.connect(alice).approve(address, principal);
+  await lgc.connect(bob).approve(address, principal);
+
+  await v2.connect(alice).stake(principal);
+  await time.increase(24 * 60 * 60);
+  await v2.connect(alice).unstake(0);
+  const aliceDebt = await v2.unpaidRewards(alice.address);
+  expect(aliceDebt).to.be.gt(0n);
+  expect(await v2.totalUnpaidRewards()).to.equal(aliceDebt);
+
+  await v2.connect(bob).stake(principal);
+  await time.increase(24 * 60 * 60);
+  expect(await v2.calculateRewards(1)).to.be.gt(0n);
+
+  // Funding exactly the recorded debt must not be consumed by a newer active claim.
+  await lgc.approve(address, aliceDebt);
+  await v2.fundRewardPool(aliceDebt);
+  await expect(v2.connect(bob).claimRewards(1))
+    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
+  expect(await v2.rewardPool()).to.equal(0n);
+  expect((await v2.getStake(1))[6]).to.equal(true);
+});
+
+it("V2 partially settles deferred rewards without erasing remaining debt", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  const aliceStartingBalance = await lgc.balanceOf(alice.address);
+  await lgc.transfer(alice.address, principal);
+  await lgc.connect(alice).approve(address, principal);
+  await v2.connect(alice).stake(principal);
+  await time.increase(24 * 60 * 60);
+  await v2.connect(alice).unstake(0);
+  const owed = await v2.unpaidRewards(alice.address);
+  const firstFunding = owed / 2n;
+  expect(firstFunding).to.be.gt(0n);
+
+  await lgc.approve(address, owed);
+  await v2.fundRewardPool(firstFunding);
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.unpaidRewards(alice.address)).to.equal(owed - firstFunding);
+  expect(await v2.totalUnpaidRewards()).to.equal(owed - firstFunding);
+  expect(await v2.totalRewardsPaid()).to.equal(firstFunding);
+  expect(await v2.rewardPool()).to.equal(0n);
+  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal + firstFunding);
+
+  await v2.fundRewardPool(owed - firstFunding);
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
+  expect(await v2.totalRewardsPaid()).to.equal(owed);
+  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal + owed);
+  await expect(v2.connect(alice).claimDeferredRewards())
+    .to.be.revertedWithCustomError(v2, "NothingToClaim");
+});
+
+it("V2 accumulates deferred debt across positions while counting stakers once", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  const aliceStartingBalance = await lgc.balanceOf(alice.address);
+  await lgc.transfer(alice.address, principal * 2n);
+  await lgc.connect(alice).approve(address, principal * 2n);
+  await v2.connect(alice).stake(principal);
+  await v2.connect(alice).stake(principal);
+  expect(await v2.activeStakers()).to.equal(1n);
+  expect(await v2.totalStaked()).to.equal(principal * 2n);
+  await time.increase(24 * 60 * 60);
+
+  await v2.connect(alice).unstake(0);
+  expect(await v2.activeStakers()).to.equal(1n);
+  expect(await v2.totalStaked()).to.equal(principal);
+  const firstDebt = await v2.unpaidRewards(alice.address);
+  expect(firstDebt).to.be.gt(0n);
+  await v2.connect(alice).unstake(1);
+  expect(await v2.activeStakers()).to.equal(0n);
+  expect(await v2.totalStaked()).to.equal(0n);
+  expect(await v2.userTotalStaked(alice.address)).to.equal(0n);
+  const owed = await v2.unpaidRewards(alice.address);
+  expect(owed).to.be.gt(firstDebt);
+  expect(await v2.totalUnpaidRewards()).to.equal(owed);
+  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal * 2n);
+
+  await lgc.approve(address, owed);
+  await v2.fundRewardPool(owed);
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
+  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal * 2n + owed);
+});
+
+it("V2 returns unlocked principal without reward liquidity and preserves accrued debt", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  await lgc.transfer(alice.address, principal);
+  const initialBalance = await lgc.balanceOf(alice.address);
+  await lgc.connect(alice).approve(address, principal);
+  await v2.connect(alice).stake(principal);
+  await time.increase(24 * 60 * 60);
+  const beforeExit = await v2.calculateRewards(0);
+  expect(beforeExit).to.be.gt(0n);
+  expect(await v2.rewardPool()).to.equal(0n);
+
+  await v2.connect(alice).unstake(0);
+  expect(await v2.totalStaked()).to.equal(0n);
+  expect(await v2.activeStakers()).to.equal(0n);
+  expect((await v2.getStake(0))[6]).to.equal(false);
+  expect(await lgc.balanceOf(alice.address)).to.equal(initialBalance);
+
+  const debt = await v2.unpaidRewards(alice.address);
+  expect(debt).to.be.gte(beforeExit);
+  expect(await v2.totalUnpaidRewards()).to.equal(debt);
+  await expect(v2.connect(alice).claimDeferredRewards())
+    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+
+  const funding = ethers.parseEther("10");
+  await lgc.approve(address, funding);
+  await v2.fundRewardPool(funding);
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
+  expect(await v2.totalRewardsPaid()).to.equal(debt);
+  expect(await lgc.balanceOf(alice.address)).to.equal(initialBalance + debt);
+  await expect(v2.connect(alice).claimDeferredRewards())
+    .to.be.revertedWithCustomError(v2, "NothingToClaim");
+});
+
+it("V2 returns principal even when reward rounds to zero", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  await lgc.transfer(alice.address, 1n);
+  const balance = await lgc.balanceOf(alice.address);
+  await lgc.connect(alice).approve(address, 1n);
+  await v2.connect(alice).stake(1n);
+  await v2.connect(alice).unstake(0);
+  expect(await v2.totalStaked()).to.equal(0n);
+  expect(await v2.activeStakers()).to.equal(0n);
+  expect(await lgc.balanceOf(alice.address)).to.equal(balance);
+  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
+});
+
 it("Should demonstrate legacy withdrawal recovery after reward funding", async function () {
   const principal = ethers.parseEther("100");
   const funding = ethers.parseEther("10");
