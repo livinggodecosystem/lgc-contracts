@@ -691,6 +691,10 @@ if (userStake.active) {
 
         totalStakePositions++;
 
+        if (userTotalStaked[msg.sender] == 0) {
+            activeStakers += 1;
+        }
+
         totalStaked += amount;
         userTotalStaked[msg.sender] += amount;
 
@@ -861,6 +865,10 @@ function claimRewards(
 
         totalStaked -= amount;
         userTotalStaked[msg.sender] -= amount;
+
+        if (userTotalStaked[msg.sender] == 0) {
+            activeStakers -= 1;
+        }
 
         userStake.amount = 0;
         userStake.active = false;

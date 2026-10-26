@@ -1362,6 +1362,62 @@ it("Should update dashboard after funding the reward pool", async function () {
 });
 
 
+
+it("Should track distinct active stakers through exits", async function () {
+  const amount = ethers.parseEther("10");
+  const stakingAddress = await staking.getAddress();
+
+  const signers = await ethers.getSigners();
+  const bob = signers.find(
+    (s) =>
+      s.address.toLowerCase() !== alice.address.toLowerCase() &&
+      s.address.toLowerCase() !== signers[0].address.toLowerCase()
+  );
+
+  if (!bob) throw new Error("Second test wallet unavailable");
+
+  expect(await staking.activeStakers()).to.equal(0n);
+
+  await lgc.transfer(alice.address, amount * 2n);
+  await lgc.transfer(bob.address, amount);
+
+  await lgc.connect(alice).approve(stakingAddress, amount * 2n);
+  await lgc.connect(bob).approve(stakingAddress, amount);
+
+  await staking.connect(alice).stake(amount);
+  expect(await staking.activeStakers()).to.equal(1n);
+
+  await staking.connect(alice).stake(amount);
+  expect(await staking.activeStakers()).to.equal(1n);
+
+  await staking.connect(bob).stake(amount);
+  expect(await staking.activeStakers()).to.equal(2n);
+
+  const stats = await staking.getRewardPoolStats();
+  expect(stats.activeStakers).to.equal(2n);
+  expect(stats.totalStakePositions).to.equal(3n);
+
+  await lgc.approve(stakingAddress, ethers.parseEther("100000"));
+  await staking.fundRewardPool(ethers.parseEther("100000"));
+
+  await time.increase(366 * 24 * 60 * 60);
+
+  await staking.connect(alice).unstake(0);
+  expect(await staking.activeStakers()).to.equal(2n);
+
+  await staking.connect(alice).unstake(1);
+  expect(await staking.activeStakers()).to.equal(1n);
+
+  await staking.connect(bob).unstake(2);
+  expect(await staking.activeStakers()).to.equal(0n);
+  expect(await staking.getTotalStaked()).to.equal(0n);
+
+  await lgc.connect(alice).approve(stakingAddress, amount);
+  await staking.connect(alice).stake(amount);
+
+  expect(await staking.activeStakers()).to.equal(1n);
+});
+
 it("Should update dashboard after staking", async function () {
 
     const amount =
