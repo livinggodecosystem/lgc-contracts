@@ -1364,6 +1364,64 @@ it("Should update dashboard after funding the reward pool", async function () {
 
 
 
+it("V2 reports deferred-liability coverage without claiming full solvency", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  await lgc.transfer(alice.address, principal);
+  await lgc.connect(alice).approve(address, principal);
+  await v2.connect(alice).stake(principal);
+  await time.increase(24 * 60 * 60);
+  await v2.connect(alice).unstake(0);
+
+  const owed = await v2.unpaidRewards(alice.address);
+  expect(owed).to.be.gt(1n);
+  expect(await v2.rewardPoolHealthy()).to.equal(false);
+  let coverage = await v2.deferredRewardCoverage();
+  expect(coverage.fundedRewards).to.equal(0n);
+  expect(coverage.recordedDebt).to.equal(owed);
+  expect(coverage.fundingShortfall).to.equal(owed);
+
+  await lgc.approve(address, owed);
+  await v2.fundRewardPool(1n);
+  expect(await v2.rewardPoolHealthy()).to.equal(false);
+  coverage = await v2.deferredRewardCoverage();
+  expect(coverage.fundedRewards).to.equal(1n);
+  expect(coverage.recordedDebt).to.equal(owed);
+  expect(coverage.fundingShortfall).to.equal(owed - 1n);
+
+  await v2.fundRewardPool(owed - 1n);
+  expect(await v2.rewardPoolHealthy()).to.equal(true);
+  coverage = await v2.deferredRewardCoverage();
+  expect(coverage.fundedRewards).to.equal(owed);
+  expect(coverage.recordedDebt).to.equal(owed);
+  expect(coverage.fundingShortfall).to.equal(0n);
+});
+
+it("V2 documents that emergency pause blocks withdrawal until owner unpauses", async function () {
+  const V2 = await ethers.getContractFactory("LGCStakingV2");
+  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  await v2.waitForDeployment();
+  const address = await v2.getAddress();
+  const principal = ethers.parseEther("100");
+  await lgc.transfer(alice.address, principal);
+  await lgc.connect(alice).approve(address, principal);
+  await v2.connect(alice).stake(principal);
+  await v2.pause();
+
+  await expect(v2.connect(alice).unstake(0))
+    .to.be.revertedWithCustomError(v2, "EnforcedPause");
+  expect(await v2.totalStaked()).to.equal(principal);
+  expect((await v2.getStake(0))[6]).to.equal(true);
+
+  await v2.unpause();
+  await v2.connect(alice).unstake(0);
+  expect(await v2.totalStaked()).to.equal(0n);
+  expect((await v2.getStake(0))[6]).to.equal(false);
+});
+
 it("V2 prioritizes deferred liabilities over new live reward claims", async function () {
   const V2 = await ethers.getContractFactory("LGCStakingV2");
   const owner = await staking.owner();

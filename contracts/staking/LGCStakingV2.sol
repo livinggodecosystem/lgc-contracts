@@ -399,12 +399,27 @@ function getPoolName(
     );
 }
 
-function rewardPoolHealthy()
-    public
+/// @notice Whether funded rewards cover already-recorded deferred reward liabilities.
+/// @dev A funded pool of zero is not considered healthy. This does NOT include
+///      accrued rewards on active stakes, and is not a complete solvency test.
+function rewardPoolHealthy() public view returns (bool) {
+    return rewardPool > 0 && rewardPool >= totalUnpaidRewards;
+}
+
+/// @notice Reports recorded deferred-reward coverage (excludes live accrual).
+/// @return fundedRewards Reward liquidity recorded in rewardPool.
+/// @return recordedDebt Rewards already deferred on exited positions.
+/// @return fundingShortfall Amount needed to cover that recorded debt.
+function deferredRewardCoverage()
+    external
     view
-    returns (bool)
+    returns (uint256 fundedRewards, uint256 recordedDebt, uint256 fundingShortfall)
 {
-    return rewardPool > 0;
+    fundedRewards = rewardPool;
+    recordedDebt = totalUnpaidRewards;
+    fundingShortfall = recordedDebt > fundedRewards
+        ? recordedDebt - fundedRewards
+        : 0;
 }
 
 
