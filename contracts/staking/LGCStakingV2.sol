@@ -915,22 +915,24 @@ function claimRewards(
 
     /// @notice Claim rewards deferred when an unlocked stake was withdrawn.
     /// @dev A claimant cannot consume principal: rewardPool tracks only funded reward liquidity.
-    /// @notice Claim up to the currently funded portion of a deferred reward obligation.
-    /// @dev Partial payouts keep unpaid debt intact and never spend staked principal.
+    /// @notice Claim deferred rewards only after ALL recorded deferred debt is funded.
+    /// @dev Strict all-recorded-debt coverage prevents early creditors from draining partial funding.
+    /// @dev Accruing rewards on active positions are NOT in totalUnpaidRewards; this is not full solvency.
     function claimDeferredRewards() external whenNotPaused nonReentrant {
         uint256 owed = unpaidRewards[msg.sender];
         if (owed == 0) revert NothingToClaim();
 
-        uint256 payment = owed < rewardPool ? owed : rewardPool;
-        if (payment == 0) revert InsufficientRewardPool();
+        // No claimant may consume a partially funded reserve, irrespective of call order.
+        if (rewardPool < totalUnpaidRewards) revert InsufficientRewardPool();
 
-        unpaidRewards[msg.sender] = owed - payment;
-        totalUnpaidRewards -= payment;
-        rewardPool -= payment;
-        totalRewardsPaid += payment;
+        // Effects first, token transfer last. Entire claimant debt is discharged atomically.
+        unpaidRewards[msg.sender] = 0;
+        totalUnpaidRewards -= owed;
+        rewardPool -= owed;
+        totalRewardsPaid += owed;
 
-        lgcToken.safeTransfer(msg.sender, payment);
-        emit DeferredRewardClaimed(msg.sender, payment);
+        lgcToken.safeTransfer(msg.sender, owed);
+        emit DeferredRewardClaimed(msg.sender, owed);
     }
 
 
