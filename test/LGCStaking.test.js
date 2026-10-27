@@ -1600,36 +1600,6 @@ it("V2 does not admit a stake that could exceed its reserved lifetime budget", a
   expect(await v2.totalStaked()).to.equal(0n);
 });
 
-it("V2 owner cannot renounce critical administrative controls, even while paused", async function () {
-  const { v2 } = await deployBudgetV2();
-  await expect(v2.renounceOwnership())
-    .to.be.revertedWithCustomError(v2, "OwnershipRenunciationDisabled");
-  await v2.pause();
-  await expect(v2.renounceOwnership())
-    .to.be.revertedWithCustomError(v2, "OwnershipRenunciationDisabled");
-  expect(await v2.owner()).to.equal(owner.address);
-  await v2.unpause();
-  expect(await v2.paused()).to.equal(false);
-});
-
-it("V2 non-owner cannot renounce ownership", async function () {
-  const { v2 } = await deployBudgetV2();
-  await expect(v2.connect(alice).renounceOwnership())
-    .to.be.revertedWithCustomError(v2, "OwnableUnauthorizedAccount")
-    .withArgs(alice.address);
-});
-
-it("V2 permits authorized ownership transfer without enabling renunciation", async function () {
-  const { v2 } = await deployBudgetV2();
-  await v2.transferOwnership(alice.address);
-  expect(await v2.owner()).to.equal(alice.address);
-  await expect(v2.connect(alice).renounceOwnership())
-    .to.be.revertedWithCustomError(v2, "OwnershipRenunciationDisabled");
-  await v2.connect(alice).pause();
-  await v2.connect(alice).unpause();
-  expect(await v2.paused()).to.equal(false);
-});
-
 it("Should demonstrate legacy withdrawal recovery after reward funding", async function () {
   const principal = ethers.parseEther("100");
   const funding = ethers.parseEther("10");

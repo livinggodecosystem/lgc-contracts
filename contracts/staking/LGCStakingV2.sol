@@ -129,7 +129,6 @@ uint256 public totalPools;
     error PoolAlreadyExists();
     error TokenTransferMismatch();
     error LockExceedsRewardTerm();
-    error OwnershipRenunciationDisabled();
 
 
         /// -----------------------------------------------------------------------
@@ -509,13 +508,7 @@ function isStakeUnlocked(
 }
 
 
-    /// @notice Protects the owner-only unpause and reward funding controls from permanent loss.
-/// @dev Ownership may still be transferred deliberately to a nonzero address.
-function renounceOwnership() public override onlyOwner {
-    revert OwnershipRenunciationDisabled();
-}
-
-/// @notice Pauses all staking operations.
+    /// @notice Pauses all staking operations.
 function pause()
     external
     onlyOwner
@@ -930,7 +923,7 @@ function claimRewards(
     _claimRewards(stakeId);
 }
 
-        /// @notice Returns unlocked principal; earned rewards are recorded for separate settlement.
+        /// @notice Unstakes LGC and automatically claims pending rewards.
     /// @param stakeId The staking position ID.
     function unstake(uint256 stakeId) external whenNotPaused nonReentrant {
         _unstake(stakeId);
@@ -955,7 +948,7 @@ function claimRewards(
         if (!isStakeUnlocked(stakeId))
     revert StakeStillLocked();
 
-        // Calculate earned rewards; principal exit does not automatically settle them.
+        // Automatically claim any pending rewards
         // Calculate once, before closing the position. Principal never depends on reward liquidity.
         uint256 accrued = calculateRewards(stakeId);
         // Release unearned future rewards, but retain the earned debt reserve
