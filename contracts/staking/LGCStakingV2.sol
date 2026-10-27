@@ -92,13 +92,12 @@ struct RewardPoolStats {
     mapping(address => uint256) public unpaidRewards;
     uint256 public totalUnpaidRewards;
 
-    // O(1) conservative accounting for rewards accruing on ACTIVE positions.
-    // At time t, outstanding numerator is storedNumerator + sum(amount * APR) * (t - checkpoint).
-    // A ceil conversion to token units upper-bounds the sum of individual truncated rewards.
-    uint256 private constant REWARD_DENOMINATOR = 365 days * 10_000;
-    uint256 public activeRewardWeight;
-    uint256 public activeRewardNumerator;
-    uint256 public activeRewardCheckpoint;
+    // Each position accrues for at most one year; the maximum reward is reserved
+    // when it opens. Commitments include active unearned rewards and exited debt.
+    uint256 public constant REWARD_EARNING_DURATION = 365 days;
+    uint256 private constant REWARD_DENOMINATOR = REWARD_EARNING_DURATION * 10_000;
+    uint256 public totalRewardCommitments;
+    mapping(uint256 => uint256) public remainingPositionCommitment;
     event DeferredRewardRecorded(uint256 indexed stakeId, address indexed staker, uint256 amount);
     event DeferredRewardClaimed(address indexed staker, uint256 amount);
 
@@ -129,6 +128,7 @@ uint256 public totalPools;
     error RewardRateUnchanged();
     error PoolAlreadyExists();
     error TokenTransferMismatch();
+    error LockExceedsRewardTerm();
 
 
         /// -----------------------------------------------------------------------
@@ -198,7 +198,6 @@ event PoolRewardRateUpdated(
     revert InvalidToken();
 
         lgcToken = token;
-        activeRewardCheckpoint = block.timestamp;
 
         stakingPools[0] = StakingPool({
     id: 0,
@@ -305,6 +304,8 @@ function createPool(
     if (rewardRate == 0 || rewardRate > 10_000)
     revert InvalidRewardRate();
 
+    if (lockDuration > REWARD_EARNING_DURATION)
+    revert LockExceedsRewardTerm();
 
     if (name == bytes32(0))
     revert InvalidPool();
@@ -411,27 +412,20 @@ function getPoolName(
     );
 }
 
-/// @notice Whether rewards cover deferred debt PLUS conservative active accrual.
-/// @dev Does not include future unearned rewards; not a full lifecycle solvency test.
+/// @notice True when the pool remains sufficient for every accepted reward promise.
+/// @dev Includes future unearned rewards of active positions and exited debt.
 function rewardPoolHealthy() public view returns (bool) {
-    return rewardPool > 0 && rewardPool >= _totalAccruedLiability();
+    return rewardPool >= totalRewardCommitments && rewardPool > 0;
 }
 
-/// @notice Rewards already earned by active positions, conservatively rounded UP.
-/// @dev This is accrued liability only. It cannot predict future rewards.
+/// @notice Conservative active liability: ALL remaining promised active rewards,
+/// including unearned future amounts. This is NOT current accrued reward debt.
 function pendingActiveRewardLiability() public view returns (uint256) {
-    uint256 numerator = activeRewardNumerator +
-        activeRewardWeight * (block.timestamp - activeRewardCheckpoint);
-    return numerator / REWARD_DENOMINATOR +
-        (numerator % REWARD_DENOMINATOR == 0 ? 0 : 1);
+    return totalRewardCommitments - totalUnpaidRewards;
 }
 
-function _totalAccruedLiability() internal view returns (uint256) {
-    return totalUnpaidRewards + pendingActiveRewardLiability();
-}
-
-/// @notice Includes both recorded exited-stake debt and accrued active-stake rewards.
-/// @dev Excludes FUTURE unearned rewards and assumes exact-transfer LGC semantics.
+/// @notice Report reserved obligations; retained function name for V2 tooling.
+/// @dev estimatedActiveDebt includes future unearned rewards, not only accrual.
 function accruedRewardCoverage() external view returns (
     uint256 fundedRewards,
     uint256 recordedDeferredDebt,
@@ -442,14 +436,19 @@ function accruedRewardCoverage() external view returns (
     fundedRewards = rewardPool;
     recordedDeferredDebt = totalUnpaidRewards;
     estimatedActiveDebt = pendingActiveRewardLiability();
-    totalAccruedDebt = recordedDeferredDebt + estimatedActiveDebt;
-    fundingShortfall = totalAccruedDebt > fundedRewards ? totalAccruedDebt - fundedRewards : 0;
+    totalAccruedDebt = totalRewardCommitments;
+    fundingShortfall = totalRewardCommitments > fundedRewards
+        ? totalRewardCommitments - fundedRewards : 0;
 }
 
-function _checkpointActiveRewards() internal {
-    activeRewardNumerator += activeRewardWeight *
-        (block.timestamp - activeRewardCheckpoint);
-    activeRewardCheckpoint = block.timestamp;
+/// @notice Full reward-commitment coverage, including FUTURE promised interest.
+function rewardCommitmentCoverage() external view returns (
+    uint256 funded, uint256 committed, uint256 availableForNewStakes, uint256 shortfall
+) {
+    funded = rewardPool;
+    committed = totalRewardCommitments;
+    availableForNewStakes = funded > committed ? funded - committed : 0;
+    shortfall = committed > funded ? committed - funded : 0;
 }
 
 /// @notice Reports recorded deferred-reward coverage (excludes live accrual).
@@ -745,13 +744,19 @@ if (userStake.active) {
         if (lgcToken.balanceOf(address(this)) - balanceBefore != amount)
             revert TokenTransferMismatch();
 
-        _checkpointActiveRewards();
         uint256 stakeRate = stakingPools[poolId].annualRewardRate;
-        activeRewardWeight += amount * stakeRate;
+        // Maximum 365-day simple-interest entitlement for this position.
+        // Existing promises and newly accepted promises must be fully funded.
+        uint256 maxReward = (amount * stakeRate) / 10_000;
+        if (rewardPool < totalRewardCommitments ||
+            rewardPool - totalRewardCommitments < maxReward)
+            revert InsufficientRewardPool();
+        totalRewardCommitments += maxReward;
 
         uint256 stakeId = totalStakePositions;
        uint64 currentTime = uint64(block.timestamp);
 
+    remainingPositionCommitment[stakeId] = maxReward;
     stakes[stakeId] = StakeInfo({
     id: stakeId,
     poolId: poolId,
@@ -821,9 +826,11 @@ function stakeInPool(
         if (!userStake.active)
             revert StakeInactive();
 
-        uint256 stakingDuration =
-            block.timestamp -
-            uint256(userStake.lastClaimTime);
+        uint256 rewardEnd = uint256(userStake.startTime) + REWARD_EARNING_DURATION;
+        uint256 effectiveTime = block.timestamp < rewardEnd
+            ? block.timestamp : rewardEnd;
+        if (effectiveTime <= uint256(userStake.lastClaimTime)) return 0;
+        uint256 stakingDuration = effectiveTime - uint256(userStake.lastClaimTime);
 
        uint256 rewardRate = userStake.rewardRateBps;
 
@@ -876,15 +883,12 @@ uint256 reward =
     if (reward == 0)
         revert NothingToClaim();
 
-    // Every active accrued liability and deferred debt must be fully backed
-    // BEFORE a claimant receives any funds.
-    if (rewardPool < _totalAccruedLiability())
+    // Each position draws only from its own pre-funded entitlement.
+    if (rewardPool < totalRewardCommitments ||
+        remainingPositionCommitment[stakeId] < reward)
         revert InsufficientRewardPool();
-
-    _checkpointActiveRewards();
-    uint256 positionWeight = userStake.amount * userStake.rewardRateBps;
-    activeRewardNumerator -= positionWeight *
-        (block.timestamp - uint256(userStake.lastClaimTime));
+    remainingPositionCommitment[stakeId] -= reward;
+    totalRewardCommitments -= reward;
 
     uint64 currentTime =
     uint64(block.timestamp);
@@ -947,11 +951,12 @@ function claimRewards(
         // Automatically claim any pending rewards
         // Calculate once, before closing the position. Principal never depends on reward liquidity.
         uint256 accrued = calculateRewards(stakeId);
-        _checkpointActiveRewards();
-        uint256 positionWeight = userStake.amount * userStake.rewardRateBps;
-        activeRewardNumerator -= positionWeight *
-            (block.timestamp - uint256(userStake.lastClaimTime));
-        activeRewardWeight -= positionWeight;
+        // Release unearned future rewards, but retain the earned debt reserve
+        // when the principal is returned, even while the pool is paused.
+        uint256 reserved = remainingPositionCommitment[stakeId];
+        if (reserved < accrued) revert InsufficientRewardPool();
+        totalRewardCommitments -= (reserved - accrued);
+        remainingPositionCommitment[stakeId] = 0;
         if (accrued != 0) {
             unpaidRewards[msg.sender] += accrued;
             totalUnpaidRewards += accrued;
@@ -989,12 +994,13 @@ function claimRewards(
         uint256 owed = unpaidRewards[msg.sender];
         if (owed == 0) revert NothingToClaim();
 
-        // No claimant may consume a partially funded reserve, irrespective of call order.
-        if (rewardPool < _totalAccruedLiability()) revert InsufficientRewardPool();
+        // Recorded debt is part of totalRewardCommitments and remains reserved.
+        if (rewardPool < totalRewardCommitments) revert InsufficientRewardPool();
 
-        // Effects first, token transfer last. Entire claimant debt is discharged atomically.
+        // Effects first, transfer last; other participants' reserves remain untouched.
         unpaidRewards[msg.sender] = 0;
         totalUnpaidRewards -= owed;
+        totalRewardCommitments -= owed;
         rewardPool -= owed;
         totalRewardsPaid += owed;
 

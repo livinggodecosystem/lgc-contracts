@@ -1364,476 +1364,240 @@ it("Should update dashboard after funding the reward pool", async function () {
 
 
 
-it("V2 fully backs active accrued rewards before paying either active claimant", async function () {
+// V2 fully funded, bounded-term financial policy tests.
+async function deployBudgetV2() {
   const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
+  const v2 = await V2.deploy(owner.address, await lgc.getAddress());
   await v2.waitForDeployment();
   const address = await v2.getAddress();
-  const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
-  await v2.connect(alice).stake(principal);
-  await v2.connect(bob).stake(principal);
-  await time.increase(24 * 60 * 60);
+  return { v2, address };
+}
 
-  const activeA = await v2.calculateRewards(0);
-  const activeB = await v2.calculateRewards(1);
-  expect(activeA).to.be.gt(0n);
-  expect(activeB).to.be.gt(0n);
-  const tooLittle = activeA + 1n;
-  const sufficientBuffer = ethers.parseEther("1");
-  await lgc.approve(address, tooLittle + sufficientBuffer);
-  await v2.fundRewardPool(tooLittle);
-  expect(await v2.rewardPoolHealthy()).to.equal(false);
-  const accounting = await v2.accruedRewardCoverage();
-  expect(accounting.estimatedActiveDebt).to.be.gte(activeA + activeB);
-  expect(accounting.fundingShortfall).to.be.gt(0n);
-  await expect(v2.connect(alice).claimRewards(0))
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  await expect(v2.connect(bob).claimRewards(1))
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-
-  await v2.fundRewardPool(sufficientBuffer);
-  expect(await v2.rewardPoolHealthy()).to.equal(true);
-  await v2.connect(bob).claimRewards(1);
-  await v2.connect(alice).claimRewards(0);
-  expect(await v2.activeStakers()).to.equal(2n);
-  expect(await v2.totalStaked()).to.equal(principal * 2n);
-  expect(await v2.rewardPool()).to.be.gte(await v2.pendingActiveRewardLiability());
-});
-
-it("V2 conserves active liabilities across claims, exits, and deferred settlement", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
-  const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
-  await v2.connect(alice).stake(principal);
-  await v2.connect(bob).stake(principal);
-  await time.increase(24 * 60 * 60);
-  const amount = ethers.parseEther("5");
+async function fundV2(v2, address, amount) {
   await lgc.approve(address, amount);
   await v2.fundRewardPool(amount);
-  await v2.connect(alice).claimRewards(0);
-  expect(await v2.activeRewardWeight()).to.equal(principal * 2000n);
-  await v2.connect(bob).unstake(1);
-  const owedBob = await v2.unpaidRewards(bob.address);
-  expect(owedBob).to.be.gt(0n);
-  expect(await v2.activeRewardWeight()).to.equal(principal * 1000n);
+}
+
+async function prepareV2Staker(address, user, principal) {
+  await lgc.transfer(user.address, principal);
+  await lgc.connect(user).approve(address, principal);
+}
+
+it("V2 refuses new stakes unless the maximum 365-day reward is pre-funded", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await expect(v2.connect(alice).stake(principal)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  await fundV2(v2, address, budget - 1n);
+  await expect(v2.connect(alice).stake(principal)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  await fundV2(v2, address, 1n);
+  await v2.connect(alice).stake(principal);
+  expect(await v2.totalRewardCommitments()).to.equal(budget);
+  expect(await v2.remainingPositionCommitment(0)).to.equal(budget);
   expect(await v2.rewardPoolHealthy()).to.equal(true);
-  await v2.connect(bob).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.rewardPool()).to.be.gte(await v2.pendingActiveRewardLiability());
+});
+
+it("V2 cannot admit a second stake using reward funds already committed to the first", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await prepareV2Staker(address, bob, principal);
+  await fundV2(v2, address, budget);
+  await v2.connect(alice).stake(principal);
+  await expect(v2.connect(bob).stake(principal)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  await fundV2(v2, address, budget);
+  await v2.connect(bob).stake(principal);
+  expect(await v2.totalRewardCommitments()).to.equal(2n * budget);
+  expect(await v2.totalStaked()).to.equal(2n * principal);
+  expect((await v2.rewardCommitmentCoverage()).availableForNewStakes).to.equal(0n);
+});
+
+it("V2 settles one active claim without consuming another staker's future reserve", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await prepareV2Staker(address, bob, principal);
+  await fundV2(v2, address, 2n * budget);
+  await v2.connect(alice).stake(principal);
+  await v2.connect(bob).stake(principal);
+  await time.increase(60 * 24 * 3600);
+  await v2.connect(alice).claimRewards(0);
+  const remainingA = await v2.remainingPositionCommitment(0);
+  const remainingB = await v2.remainingPositionCommitment(1);
+  expect(remainingA).to.be.lt(budget);
+  expect(remainingB).to.equal(budget);
+  expect(await v2.totalRewardCommitments()).to.equal(remainingA + remainingB);
+  expect(await v2.rewardPool()).to.equal(remainingA + remainingB);
+  await v2.connect(bob).claimRewards(1);
+  expect(await v2.rewardPoolHealthy()).to.equal(true);
+});
+
+it("V2 caps earning at 365 days even when the owner never tops up the reserve", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, budget);
+  await v2.connect(alice).stake(principal);
+  await time.increase(370 * 24 * 3600);
+  expect(await v2.calculateRewards(0)).to.equal(budget);
+  await time.increase(450 * 24 * 3600);
+  expect(await v2.calculateRewards(0)).to.equal(budget);
+  await v2.connect(alice).claimRewards(0);
+  expect(await v2.rewardPool()).to.equal(0n);
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
+  await time.increase(30 * 24 * 3600);
+  expect(await v2.calculateRewards(0)).to.equal(0n);
+  await expect(v2.connect(alice).claimRewards(0)).to.be.revertedWithCustomError(v2, "NothingToClaim");
   await v2.connect(alice).unstake(0);
-  expect(await v2.activeRewardWeight()).to.equal(0n);
-  expect(await v2.pendingActiveRewardLiability()).to.equal(0n);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
   expect(await v2.totalStaked()).to.equal(0n);
-  expect(await v2.contractBalance()).to.be.gte(await v2.rewardPool());
 });
 
-it("V2 snapshots each position APR and keeps Flexible rate controls synchronized", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 releases only unearned commitments on early principal exit", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, budget);
   await v2.connect(alice).stake(principal);
-  expect((await v2.getStake(0)).rewardRateBps).to.equal(1000n);
-  await time.increase(24 * 60 * 60);
-  const before = await v2.calculateRewards(0);
-
-  await v2.updatePoolRewardRate(0, 5000);
-  expect(await v2.annualRewardRate()).to.equal(5000n);
-  expect(await v2.getPoolRewardRate(0)).to.equal(5000n);
-  expect((await v2.getStake(0)).rewardRateBps).to.equal(1000n);
-  const after = await v2.calculateRewards(0);
-  expect(after).to.be.lt(before * 2n);
-  await v2.connect(bob).stake(principal);
-  expect((await v2.getStake(1)).rewardRateBps).to.equal(5000n);
-  await time.increase(24 * 60 * 60);
-  expect(await v2.calculateRewards(1)).to.be.gt((await v2.calculateRewards(0)) * 2n);
-
-  await v2.setAnnualRewardRate(1500);
-  expect(await v2.getPoolRewardRate(0)).to.equal(1500n);
-  expect(await v2.annualRewardRate()).to.equal(1500n);
-  expect((await v2.getStake(1)).rewardRateBps).to.equal(5000n);
-  await expect(v2.updatePoolRewardRate(0, 10001))
-    .to.be.revertedWithCustomError(v2, "InvalidRewardRate");
-  await expect(v2.createPool(ethers.encodeBytes32String("BAD"), 10001, 0))
-    .to.be.revertedWithCustomError(v2, "InvalidRewardRate");
+  await time.increase(30 * 24 * 3600);
+  await v2.connect(alice).unstake(0);
+  const owed = await v2.unpaidRewards(alice.address);
+  expect(owed).to.be.gt(0n);
+  expect(await v2.totalRewardCommitments()).to.equal(owed);
+  expect(await v2.remainingPositionCommitment(0)).to.equal(0n);
+  expect((await v2.rewardCommitmentCoverage()).availableForNewStakes).to.equal(budget - owed);
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
 });
 
-it("V2 protects two creditors from underfunded first-claim payouts", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const owner = await staking.owner();
-  const v2 = await V2.deploy(owner, await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 lets different creditors settle their reserved deferred debt in either order", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  const bob = (await ethers.getSigners()).find(s =>
-    s.address.toLowerCase() !== alice.address.toLowerCase() &&
-    s.address.toLowerCase() !== owner.toLowerCase());
-  expect(bob).not.to.equal(undefined);
-
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
+  await prepareV2Staker(address, alice, principal);
+  await prepareV2Staker(address, bob, principal);
+  await fundV2(v2, address, ethers.parseEther("20"));
   await v2.connect(alice).stake(principal);
   await v2.connect(bob).stake(principal);
-  await time.increase(24 * 60 * 60);
+  await time.increase(10 * 24 * 3600);
   await v2.connect(alice).unstake(0);
   await v2.connect(bob).unstake(1);
   const owedA = await v2.unpaidRewards(alice.address);
   const owedB = await v2.unpaidRewards(bob.address);
-  const total = owedA + owedB;
-  expect(owedA).to.be.gt(0n);
-  expect(owedB).to.be.gt(0n);
-  const shortFunding = (owedA < owedB ? owedA : owedB) / 2n;
-  expect(shortFunding).to.be.gt(0n);
-  await lgc.approve(address, total);
-  await v2.fundRewardPool(shortFunding);
-
-  // Neither Bob nor Alice can gain an advantage by submitting first.
-  await expect(v2.connect(bob).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  expect(await v2.totalUnpaidRewards()).to.equal(total);
-  expect(await v2.unpaidRewards(alice.address)).to.equal(owedA);
-  expect(await v2.unpaidRewards(bob.address)).to.equal(owedB);
-  expect(await v2.rewardPool()).to.equal(shortFunding);
-
-  await v2.fundRewardPool(total - shortFunding);
-  // Now claim order does not compromise the other recorded creditor.
+  expect(await v2.totalRewardCommitments()).to.equal(owedA + owedB);
   await v2.connect(bob).claimDeferredRewards();
-  expect(await v2.rewardPool()).to.equal(owedA);
-  expect(await v2.totalUnpaidRewards()).to.equal(owedA);
+  expect(await v2.totalRewardCommitments()).to.equal(owedA);
   await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.rewardPool()).to.equal(0n);
-  expect(await v2.totalRewardsPaid()).to.equal(total);
-  expect(await v2.totalStaked()).to.equal(0n);
-  expect(await v2.activeStakers()).to.equal(0n);
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
+  expect(await v2.totalRewardsPaid()).to.equal(owedA + owedB);
 });
 
-it("V2 requires recapitalization if additional deferred debt is recorded", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const owner = await staking.owner();
-  const v2 = await V2.deploy(owner, await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 allows an unlocked emergency exit while paused and retains its funded deferred debt", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  const bob = (await ethers.getSigners()).find(s =>
-    s.address.toLowerCase() !== alice.address.toLowerCase() &&
-    s.address.toLowerCase() !== owner.toLowerCase());
-  expect(bob).not.to.equal(undefined);
-
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, ethers.parseEther("10"));
   await v2.connect(alice).stake(principal);
-  await v2.connect(bob).stake(principal);
-  await time.increase(24 * 60 * 60);
-  await v2.connect(alice).unstake(0);
-  const aliceDebt = await v2.unpaidRewards(alice.address);
-  expect(aliceDebt).to.be.gt(0n);
-  await lgc.approve(address, ethers.parseEther("10"));
-  await v2.fundRewardPool(aliceDebt);
-  // Bob is still active: his already-accrued rewards are liabilities too.
-  expect(await v2.rewardPoolHealthy()).to.equal(false);
-  expect((await v2.deferredRewardCoverage()).fundingShortfall).to.equal(0n);
-  expect((await v2.accruedRewardCoverage()).fundingShortfall).to.be.gt(0n);
-
-  // Another eligible withdrawal creates a NEW recorded obligation before Alice claims.
-  await v2.connect(bob).unstake(1);
-  const bobDebt = await v2.unpaidRewards(bob.address);
-  expect(bobDebt).to.be.gt(0n);
-  expect(await v2.totalUnpaidRewards()).to.equal(aliceDebt + bobDebt);
-  expect(await v2.rewardPoolHealthy()).to.equal(false);
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  await expect(v2.connect(bob).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-
-  await v2.fundRewardPool(bobDebt);
-  expect(await v2.rewardPool()).to.equal(aliceDebt + bobDebt);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(bobDebt);
-  expect(await v2.rewardPool()).to.equal(bobDebt);
-  await v2.connect(bob).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.rewardPool()).to.equal(0n);
-  expect(await v2.totalRewardsPaid()).to.equal(aliceDebt + bobDebt);
-});
-
-it("V2 reports deferred-liability coverage without claiming full solvency", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
-  const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await v2.connect(alice).stake(principal);
-  await time.increase(24 * 60 * 60);
-  await v2.connect(alice).unstake(0);
-
-  const owed = await v2.unpaidRewards(alice.address);
-  expect(owed).to.be.gt(1n);
-  expect(await v2.rewardPoolHealthy()).to.equal(false);
-  let coverage = await v2.deferredRewardCoverage();
-  expect(coverage.fundedRewards).to.equal(0n);
-  expect(coverage.recordedDebt).to.equal(owed);
-  expect(coverage.fundingShortfall).to.equal(owed);
-
-  await lgc.approve(address, owed);
-  await v2.fundRewardPool(1n);
-  expect(await v2.rewardPoolHealthy()).to.equal(false);
-  coverage = await v2.deferredRewardCoverage();
-  expect(coverage.fundedRewards).to.equal(1n);
-  expect(coverage.recordedDebt).to.equal(owed);
-  expect(coverage.fundingShortfall).to.equal(owed - 1n);
-
-  await v2.fundRewardPool(owed - 1n);
-  expect(await v2.rewardPoolHealthy()).to.equal(true);
-  coverage = await v2.deferredRewardCoverage();
-  expect(coverage.fundedRewards).to.equal(owed);
-  expect(coverage.recordedDebt).to.equal(owed);
-  expect(coverage.fundingShortfall).to.equal(0n);
-});
-
-it("V2 provides unlocked principal exit while paused and keeps debt recorded", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
-  const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  const initialBalance = await lgc.balanceOf(alice.address);
-  await lgc.connect(alice).approve(address, principal);
-  await v2.connect(alice).stake(principal);
-  await time.increase(24 * 60 * 60);
+  await time.increase(24 * 3600);
   await v2.pause();
-
-  await expect(v2.connect(alice).unstake(0))
-    .to.be.revertedWithCustomError(v2, "EnforcedPause");
-  await expect(v2.connect(alice).claimRewards(0))
-    .to.be.revertedWithCustomError(v2, "EnforcedPause");
+  await expect(v2.connect(alice).unstake(0)).to.be.reverted;
   await v2.connect(alice).emergencyUnstake(0);
-  expect(await v2.totalStaked()).to.equal(0n);
-  expect((await v2.getStake(0))[6]).to.equal(false);
-  expect(await lgc.balanceOf(alice.address)).to.equal(initialBalance);
-  expect(await v2.unpaidRewards(alice.address)).to.be.gt(0n);
-  expect(await v2.activeRewardWeight()).to.equal(0n);
-  expect(await v2.pendingActiveRewardLiability()).to.equal(0n);
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "EnforcedPause");
+  const debt = await v2.unpaidRewards(alice.address);
+  expect(debt).to.be.gt(0n);
+  expect(await v2.totalRewardCommitments()).to.equal(debt);
+  await expect(v2.connect(alice).claimDeferredRewards()).to.be.reverted;
+  await v2.unpause();
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
 });
 
-it("V2 emergency exit respects lock even when paused", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 emergency exit does not bypass a Silver pool lock", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  await lgc.connect(alice).approve(address, principal);
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, ethers.parseEther("12"));
   await v2.connect(alice).stakeInPool(1, principal);
   await v2.pause();
-  await expect(v2.connect(alice).emergencyUnstake(0))
-    .to.be.revertedWithCustomError(v2, "StakeStillLocked");
-  await time.increase(30 * 24 * 60 * 60);
+  await expect(v2.connect(alice).emergencyUnstake(0)).to.be.revertedWithCustomError(v2, "StakeStillLocked");
+  await time.increase(31 * 24 * 3600);
   await v2.connect(alice).emergencyUnstake(0);
   expect(await v2.totalStaked()).to.equal(0n);
 });
 
-it("V2 prioritizes deferred liabilities over new live reward claims", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const owner = await staking.owner();
-  const v2 = await V2.deploy(owner, await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 retains original position APR and reserved reward cap after owner changes rates", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  const accounts = await ethers.getSigners();
-  const bob = accounts.find(s => s.address.toLowerCase() !== alice.address.toLowerCase()
-    && s.address.toLowerCase() !== owner.toLowerCase());
-  expect(bob).not.to.equal(undefined);
-
-  await lgc.transfer(alice.address, principal);
-  await lgc.transfer(bob.address, principal);
-  await lgc.connect(alice).approve(address, principal);
-  await lgc.connect(bob).approve(address, principal);
-
+  await prepareV2Staker(address, alice, principal);
+  await prepareV2Staker(address, bob, principal);
+  await fundV2(v2, address, ethers.parseEther("30"));
   await v2.connect(alice).stake(principal);
-  await time.increase(24 * 60 * 60);
-  await v2.connect(alice).unstake(0);
-  const aliceDebt = await v2.unpaidRewards(alice.address);
-  expect(aliceDebt).to.be.gt(0n);
-  expect(await v2.totalUnpaidRewards()).to.equal(aliceDebt);
-
+  await v2.setAnnualRewardRate(2000);
   await v2.connect(bob).stake(principal);
-  await time.increase(24 * 60 * 60);
-  expect(await v2.calculateRewards(1)).to.be.gt(0n);
-
-  // Funding exactly the recorded debt must not be consumed by a newer active claim.
-  const extra = ethers.parseEther("1");
-  await lgc.approve(address, aliceDebt + extra);
-  await v2.fundRewardPool(aliceDebt);
-  await expect(v2.connect(bob).claimRewards(1))
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  // Fully funding recorded debt is NOT enough while Bob has an accrued position.
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  await v2.fundRewardPool(extra);
-  expect(await v2.rewardPoolHealthy()).to.equal(true);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.rewardPool()).to.equal(extra);
-  expect((await v2.getStake(1))[6]).to.equal(true);
+  expect((await v2.getStake(0)).rewardRateBps).to.equal(1000n);
+  expect((await v2.getStake(1)).rewardRateBps).to.equal(2000n);
+  expect(await v2.remainingPositionCommitment(0)).to.equal(ethers.parseEther("10"));
+  expect(await v2.remainingPositionCommitment(1)).to.equal(ethers.parseEther("20"));
+  await time.increase(365 * 24 * 3600);
+  expect(await v2.calculateRewards(0)).to.equal(ethers.parseEther("10"));
+  expect(await v2.calculateRewards(1)).to.equal(ethers.parseEther("20"));
 });
 
-it("V2 blocks underfunded deferred claims and settles on full coverage", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
-  const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  const starting = await lgc.balanceOf(alice.address);
-  await lgc.connect(alice).approve(address, principal);
-  await v2.connect(alice).stake(principal);
-  await time.increase(24 * 60 * 60);
-  await v2.connect(alice).unstake(0);
-  const owed = await v2.unpaidRewards(alice.address);
-  expect(owed).to.be.gt(1n);
-  const half = owed / 2n;
-  await lgc.approve(address, owed);
-  await v2.fundRewardPool(half);
-
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-  expect(await v2.unpaidRewards(alice.address)).to.equal(owed);
-  expect(await v2.totalUnpaidRewards()).to.equal(owed);
-  expect(await v2.rewardPool()).to.equal(half);
-  expect(await v2.totalRewardsPaid()).to.equal(0n);
-  expect(await lgc.balanceOf(alice.address)).to.equal(starting);
-
-  await v2.fundRewardPool(owed - half);
-  expect(await v2.rewardPoolHealthy()).to.equal(true);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.totalRewardsPaid()).to.equal(owed);
-  expect(await v2.rewardPool()).to.equal(0n);
-  expect(await lgc.balanceOf(alice.address)).to.equal(starting + owed);
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "NothingToClaim");
+it("V2 rejects custom pool locks extending beyond the earning term", async function () {
+  const { v2 } = await deployBudgetV2();
+  await expect(v2.createPool(ethers.encodeBytes32String("EXCESS"), 1200, 366 * 24 * 3600))
+    .to.be.revertedWithCustomError(v2, "LockExceedsRewardTerm");
+  await v2.createPool(ethers.encodeBytes32String("YEAR"), 1000, 365 * 24 * 3600);
+  expect((await v2.getPool(5)).lockDuration).to.equal(365n * 24n * 3600n);
 });
 
-it("V2 accumulates deferred debt across positions while counting stakers once", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 reports full future commitments rather than only currently accrued rewards", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  const aliceStartingBalance = await lgc.balanceOf(alice.address);
-  await lgc.transfer(alice.address, principal * 2n);
-  await lgc.connect(alice).approve(address, principal * 2n);
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, ethers.parseEther("15"));
   await v2.connect(alice).stake(principal);
-  await v2.connect(alice).stake(principal);
-  expect(await v2.activeStakers()).to.equal(1n);
-  expect(await v2.totalStaked()).to.equal(principal * 2n);
-  await time.increase(24 * 60 * 60);
-
-  await v2.connect(alice).unstake(0);
-  expect(await v2.activeStakers()).to.equal(1n);
-  expect(await v2.totalStaked()).to.equal(principal);
-  const firstDebt = await v2.unpaidRewards(alice.address);
-  expect(firstDebt).to.be.gt(0n);
-  await v2.connect(alice).unstake(1);
-  expect(await v2.activeStakers()).to.equal(0n);
-  expect(await v2.totalStaked()).to.equal(0n);
-  expect(await v2.userTotalStaked(alice.address)).to.equal(0n);
-  const owed = await v2.unpaidRewards(alice.address);
-  expect(owed).to.be.gt(firstDebt);
-  expect(await v2.totalUnpaidRewards()).to.equal(owed);
-  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal * 2n);
-
-  await lgc.approve(address, owed);
-  await v2.fundRewardPool(owed);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await lgc.balanceOf(alice.address)).to.equal(aliceStartingBalance + principal * 2n + owed);
+  const coverage = await v2.rewardCommitmentCoverage();
+  expect(coverage.committed).to.equal(ethers.parseEther("10"));
+  expect(coverage.availableForNewStakes).to.equal(ethers.parseEther("5"));
+  const oldCoverage = await v2.accruedRewardCoverage();
+  expect(oldCoverage.estimatedActiveDebt).to.equal(ethers.parseEther("10"));
+  expect(oldCoverage.fundingShortfall).to.equal(0n);
 });
 
-it("V2 returns unlocked principal without reward liquidity and preserves accrued debt", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
+it("V2 protects principal against reward payouts and keeps the token balance reconciled", async function () {
+  const { v2, address } = await deployBudgetV2();
   const principal = ethers.parseEther("100");
-  await lgc.transfer(alice.address, principal);
-  const initialBalance = await lgc.balanceOf(alice.address);
-  await lgc.connect(alice).approve(address, principal);
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, ethers.parseEther("10"));
   await v2.connect(alice).stake(principal);
-  await time.increase(24 * 60 * 60);
-  const beforeExit = await v2.calculateRewards(0);
-  expect(beforeExit).to.be.gt(0n);
-  expect(await v2.rewardPool()).to.equal(0n);
-
+  expect(await v2.contractBalance()).to.equal(principal + ethers.parseEther("10"));
+  await time.increase(90 * 24 * 3600);
+  await v2.connect(alice).claimRewards(0);
+  expect(await v2.contractBalance()).to.equal(await v2.totalStaked() + await v2.rewardPool());
   await v2.connect(alice).unstake(0);
   expect(await v2.totalStaked()).to.equal(0n);
-  expect(await v2.activeStakers()).to.equal(0n);
-  expect((await v2.getStake(0))[6]).to.equal(false);
-  expect(await lgc.balanceOf(alice.address)).to.equal(initialBalance);
-
-  const debt = await v2.unpaidRewards(alice.address);
-  expect(debt).to.be.gte(beforeExit);
-  expect(await v2.totalUnpaidRewards()).to.equal(debt);
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
-
-  const funding = ethers.parseEther("10");
-  await lgc.approve(address, funding);
-  await v2.fundRewardPool(funding);
-  await v2.connect(alice).claimDeferredRewards();
-  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
-  expect(await v2.totalUnpaidRewards()).to.equal(0n);
-  expect(await v2.totalRewardsPaid()).to.equal(debt);
-  expect(await lgc.balanceOf(alice.address)).to.equal(initialBalance + debt);
-  await expect(v2.connect(alice).claimDeferredRewards())
-    .to.be.revertedWithCustomError(v2, "NothingToClaim");
+  expect(await v2.contractBalance()).to.equal(await v2.rewardPool());
 });
 
-it("V2 returns principal even when reward rounds to zero", async function () {
-  const V2 = await ethers.getContractFactory("LGCStakingV2");
-  const v2 = await V2.deploy(await staking.owner(), await lgc.getAddress());
-  await v2.waitForDeployment();
-  const address = await v2.getAddress();
-  await lgc.transfer(alice.address, 1n);
-  const balance = await lgc.balanceOf(alice.address);
-  await lgc.connect(alice).approve(address, 1n);
-  await v2.connect(alice).stake(1n);
+it("V2 does not admit a stake that could exceed its reserved lifetime budget", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  await prepareV2Staker(address, alice, principal);
+  await v2.setAnnualRewardRate(10_000);
+  await fundV2(v2, address, principal - 1n);
+  await expect(v2.connect(alice).stake(principal)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  await fundV2(v2, address, 1n);
+  await v2.connect(alice).stake(principal);
+  expect(await v2.totalRewardCommitments()).to.equal(principal);
+  await time.increase(400 * 24 * 3600);
+  await v2.connect(alice).claimRewards(0);
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
   await v2.connect(alice).unstake(0);
   expect(await v2.totalStaked()).to.equal(0n);
-  expect(await v2.activeStakers()).to.equal(0n);
-  expect(await lgc.balanceOf(alice.address)).to.equal(balance);
-  expect(await v2.unpaidRewards(alice.address)).to.equal(0n);
 });
 
 it("Should demonstrate legacy withdrawal recovery after reward funding", async function () {
