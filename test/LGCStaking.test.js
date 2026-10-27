@@ -1600,6 +1600,185 @@ it("V2 does not admit a stake that could exceed its reserved lifetime budget", a
   expect(await v2.totalStaked()).to.equal(0n);
 });
 
+
+// V2 final-closeout recovery: never raid principal or any reward obligation.
+it("V2 denies reward recovery to non-owners, including when no stake is active", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const ten = ethers.parseEther("10");
+  await fundV2(v2, address, ten);
+  await expect(v2.connect(alice).recoverUnusedRewardFunds(ten))
+    .to.be.revertedWithCustomError(v2, "OwnableUnauthorizedAccount").withArgs(alice.address);
+  expect(await v2.rewardPool()).to.equal(ten);
+  expect(await v2.stakingClosed()).to.equal(false);
+});
+
+it("V2 rejects zero-amount or excess closeout recovery without closing staking", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const ten = ethers.parseEther("10");
+  await fundV2(v2, address, ten);
+  await expect(v2.recoverUnusedRewardFunds(0)).to.be.revertedWithCustomError(v2, "InvalidAmount");
+  await expect(v2.recoverUnusedRewardFunds(ten + 1n)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+  expect(await v2.stakingClosed()).to.equal(false);
+  expect(await v2.totalRewardsRecovered()).to.equal(0n);
+});
+
+it("V2 rejects closeout while principal is still staked, even after all rewards were paid", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const budget = ethers.parseEther("10");
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, budget + ethers.parseEther("5"));
+  await v2.connect(alice).stake(principal);
+  await time.increase(370 * 24 * 3600);
+  await v2.connect(alice).claimRewards(0);
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
+  expect(await v2.totalStaked()).to.equal(principal);
+  await expect(v2.recoverUnusedRewardFunds(1))
+    .to.be.revertedWithCustomError(v2, "OutstandingStakingObligations");
+  expect(await v2.stakingClosed()).to.equal(false);
+});
+
+it("V2 rejects recovery while any deferred creditor remains unpaid after principal exits", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const funded = ethers.parseEther("20");
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, funded);
+  await v2.connect(alice).stake(principal);
+  await time.increase(30 * 24 * 3600);
+  await v2.connect(alice).unstake(0);
+  expect(await v2.totalStaked()).to.equal(0n);
+  expect(await v2.totalUnpaidRewards()).to.be.gt(0n);
+  await expect(v2.recoverUnusedRewardFunds(ethers.parseEther("1")))
+    .to.be.revertedWithCustomError(v2, "OutstandingStakingObligations");
+  await v2.connect(alice).claimDeferredRewards();
+  const remaining = await v2.rewardPool();
+  const before = await lgc.balanceOf(owner.address);
+  await expect(v2.recoverUnusedRewardFunds(remaining))
+    .to.emit(v2, "UnusedRewardFundsRecovered").withArgs(owner.address, remaining);
+  expect(await lgc.balanceOf(owner.address)).to.equal(before + remaining);
+  expect(await v2.totalRewardsRecovered()).to.equal(remaining);
+  expect(await v2.rewardPool()).to.equal(0n);
+  expect(await v2.stakingClosed()).to.equal(true);
+});
+
+it("V2 waits for BOTH stakers and creditors before final-closeout recovery", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  await prepareV2Staker(address, alice, principal);
+  await prepareV2Staker(address, bob, principal);
+  await fundV2(v2, address, ethers.parseEther("30"));
+  await v2.connect(alice).stake(principal);
+  await v2.connect(bob).stake(principal);
+  await time.increase(15 * 24 * 3600);
+  await v2.connect(alice).unstake(0);
+  await v2.connect(alice).claimDeferredRewards();
+  await expect(v2.recoverUnusedRewardFunds(1))
+    .to.be.revertedWithCustomError(v2, "OutstandingStakingObligations");
+  await v2.connect(bob).unstake(1);
+  await expect(v2.recoverUnusedRewardFunds(1))
+    .to.be.revertedWithCustomError(v2, "OutstandingStakingObligations");
+  await v2.connect(bob).claimDeferredRewards();
+  expect(await v2.activeStakers()).to.equal(0n);
+  expect(await v2.totalRewardCommitments()).to.equal(0n);
+  const excess = await v2.rewardPool();
+  await v2.recoverUnusedRewardFunds(excess);
+  expect(await v2.rewardPool()).to.equal(0n);
+});
+
+it("V2 permanently blocks new stakes and reward funding after the FIRST recovery", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const ten = ethers.parseEther("10");
+  await fundV2(v2, address, ten);
+  await v2.recoverUnusedRewardFunds(ethers.parseEther("1"));
+  expect(await v2.stakingClosed()).to.equal(true);
+  await prepareV2Staker(address, alice, principal);
+  await expect(v2.connect(alice).stake(principal))
+    .to.be.revertedWithCustomError(v2, "StakingPermanentlyClosed");
+  await expect(v2.connect(alice).stakeInPool(1, principal))
+    .to.be.revertedWithCustomError(v2, "StakingPermanentlyClosed");
+  await expect(v2.fundRewardPool(ten))
+    .to.be.revertedWithCustomError(v2, "StakingPermanentlyClosed");
+  await v2.recoverUnusedRewardFunds(ethers.parseEther("9"));
+  expect(await v2.totalRewardsRecovered()).to.equal(ten);
+  expect(await v2.rewardPool()).to.equal(0n);
+  await expect(v2.recoverUnusedRewardFunds(1)).to.be.revertedWithCustomError(v2, "InsufficientRewardPool");
+});
+
+it("V2 does not recover accidentally direct-transferred tokens as accounted reward funding", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const funding = ethers.parseEther("10");
+  const unsolicited = ethers.parseEther("3");
+  await fundV2(v2, address, funding);
+  await lgc.transfer(address, unsolicited);
+  const before = await lgc.balanceOf(owner.address);
+  await v2.recoverUnusedRewardFunds(funding);
+  expect(await lgc.balanceOf(owner.address)).to.equal(before + funding);
+  expect(await v2.contractBalance()).to.equal(unsolicited);
+  expect(await v2.totalRewardsRecovered()).to.equal(funding);
+  expect(await v2.totalRewardsFunded()).to.equal(funding);
+  expect(await v2.totalRewardsPaid()).to.equal(0n);
+  expect(await v2.rewardPool()).to.equal(0n);
+});
+
+it("V2 permits closeout while paused only after all obligations are cleared", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const funding = ethers.parseEther("10");
+  await fundV2(v2, address, funding);
+  await v2.pause();
+  await v2.recoverUnusedRewardFunds(funding);
+  expect(await v2.stakingClosed()).to.equal(true);
+  expect(await v2.paused()).to.equal(true);
+  await v2.unpause();
+  expect(await v2.paused()).to.equal(false);
+  expect(await v2.owner()).to.equal(owner.address);
+});
+
+it("V2 preserves deliberate ownership transfer and restricts later recovery to the new owner", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const funding = ethers.parseEther("10");
+  await fundV2(v2, address, funding);
+  await v2.recoverUnusedRewardFunds(ethers.parseEther("4"));
+  await v2.transferOwnership(bob.address);
+  expect(await v2.owner()).to.equal(bob.address);
+  await expect(v2.recoverUnusedRewardFunds(1)).to.be.revertedWithCustomError(v2, "OwnableUnauthorizedAccount").withArgs(owner.address);
+  const before = await lgc.balanceOf(bob.address);
+  await v2.connect(bob).recoverUnusedRewardFunds(ethers.parseEther("6"));
+  expect(await lgc.balanceOf(bob.address)).to.equal(before + ethers.parseEther("6"));
+});
+
+it("V2 preserves the owner's optional MANUAL renunciation after closeout", async function () {
+  const { v2, address } = await deployBudgetV2();
+  await fundV2(v2, address, ethers.parseEther("1"));
+  await v2.recoverUnusedRewardFunds(ethers.parseEther("1"));
+  await v2.renounceOwnership();  // Local Hardhat only; NEVER a live transaction.
+  expect(await v2.owner()).to.equal(ethers.ZeroAddress);
+  expect(await v2.stakingClosed()).to.equal(true);
+});
+
+it("V2 preserves funded/paid/recovered reconciliation at final closeout", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const funding = ethers.parseEther("20");
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, funding);
+  await v2.connect(alice).stake(principal);
+  await time.increase(180 * 24 * 3600);
+  await v2.connect(alice).claimRewards(0);
+  await v2.connect(alice).unstake(0);
+  await v2.connect(alice).claimDeferredRewards();
+  const paid = await v2.totalRewardsPaid();
+  const excess = await v2.rewardPool();
+  expect(paid + excess).to.equal(funding);
+  await v2.recoverUnusedRewardFunds(excess);
+  expect(await v2.totalRewardsFunded()).to.equal(
+    (await v2.totalRewardsPaid()) + (await v2.totalRewardsRecovered()) + (await v2.rewardPool())
+  );
+  expect(await v2.contractBalance()).to.equal(0n);
+  expect(await v2.totalStaked()).to.equal(0n);
+});
+
 it("Should demonstrate legacy withdrawal recovery after reward funding", async function () {
   const principal = ethers.parseEther("100");
   const funding = ethers.parseEther("10");

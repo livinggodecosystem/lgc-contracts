@@ -98,8 +98,13 @@ struct RewardPoolStats {
     uint256 private constant REWARD_DENOMINATOR = REWARD_EARNING_DURATION * 10_000;
     uint256 public totalRewardCommitments;
     mapping(uint256 => uint256) public remainingPositionCommitment;
+
+    /// @notice Permanent closeout begins with the first owner recovery of unused rewards.
+    bool public stakingClosed;
+    uint256 public totalRewardsRecovered;
     event DeferredRewardRecorded(uint256 indexed stakeId, address indexed staker, uint256 amount);
     event DeferredRewardClaimed(address indexed staker, uint256 amount);
+    event UnusedRewardFundsRecovered(address indexed owner, uint256 amount);
 
 
     mapping(uint256 => StakingPool) public stakingPools;
@@ -129,6 +134,8 @@ uint256 public totalPools;
     error PoolAlreadyExists();
     error TokenTransferMismatch();
     error LockExceedsRewardTerm();
+    error StakingPermanentlyClosed();
+    error OutstandingStakingObligations();
 
 
         /// -----------------------------------------------------------------------
@@ -575,6 +582,7 @@ function updatePoolRewardRate(
         external
         onlyOwner
     {
+        if (stakingClosed) revert StakingPermanentlyClosed();
         if (amount == 0)
             revert InvalidAmount();
 
@@ -640,6 +648,32 @@ function setPoolActive(
         active
     );
 }
+
+    /// @notice During FINAL closeout, return only UNUSED accounted reward funding.
+    /// @dev The first successful recovery permanently blocks new stakes and funding.
+    ///      Outstanding principal, active commitments, or deferred rewards prevent recovery.
+    ///      Rewards are sent ONLY to msg.sender (the authorized owner), never an arbitrary recipient.
+    ///      Direct unsolicited token transfers are NOT part of the recoverable rewardPool.
+    ///      Owner transfer and renunciation functionality are intentionally unchanged.
+    /// @param amount Amount of uncommitted LGC funding to return to the owner.
+    function recoverUnusedRewardFunds(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        if (
+            totalStaked != 0 ||
+            activeStakers != 0 ||
+            totalRewardCommitments != 0 ||
+            totalUnpaidRewards != 0
+        ) revert OutstandingStakingObligations();
+        if (amount > rewardPool || lgcToken.balanceOf(address(this)) < rewardPool)
+            revert InsufficientRewardPool();
+
+        // Effects before interaction; the first recovery permanently closes staking.
+        stakingClosed = true;
+        rewardPool -= amount;
+        totalRewardsRecovered += amount;
+        lgcToken.safeTransfer(msg.sender, amount);
+        emit UnusedRewardFundsRecovered(msg.sender, amount);
+    }
 
     /// -----------------------------------------------------------------------
     /// View Functions
@@ -730,6 +764,7 @@ if (userStake.active) {
 )
     internal
 {
+        if (stakingClosed) revert StakingPermanentlyClosed();
         if (!poolExists(poolId))
     revert InvalidPool();
 
@@ -923,7 +958,7 @@ function claimRewards(
     _claimRewards(stakeId);
 }
 
-        /// @notice Unstakes LGC and automatically claims pending rewards.
+        /// @notice Returns unlocked principal; any accrued rewards become separately claimable debt.
     /// @param stakeId The staking position ID.
     function unstake(uint256 stakeId) external whenNotPaused nonReentrant {
         _unstake(stakeId);
