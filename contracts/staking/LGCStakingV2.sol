@@ -10,7 +10,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @title Living God Coin Staking
 /// @author Living God Ecosystem
 /// @notice Stake Living God Coin and earn rewards.
-/// @dev Production staking contract for the Living God Ecosystem.
+/// @dev Experimental V2: independent security and economic review required before public activation.
 
 contract LGCStakingV2 is Ownable, Pausable, ReentrancyGuard {
 
@@ -48,6 +48,8 @@ contract LGCStakingV2 is Ownable, Pausable, ReentrancyGuard {
     uint64 startTime;
     uint64 lastClaimTime;
     bool active;
+    // Immutable position APR snapshot; later administrative changes apply to new stakes.
+    uint256 rewardRateBps;
 }
 
 struct RewardPoolStats {
@@ -89,6 +91,14 @@ struct RewardPoolStats {
     // Reward obligations captured when principal is withdrawn without reward liquidity.
     mapping(address => uint256) public unpaidRewards;
     uint256 public totalUnpaidRewards;
+
+    // O(1) conservative accounting for rewards accruing on ACTIVE positions.
+    // At time t, outstanding numerator is storedNumerator + sum(amount * APR) * (t - checkpoint).
+    // A ceil conversion to token units upper-bounds the sum of individual truncated rewards.
+    uint256 private constant REWARD_DENOMINATOR = 365 days * 10_000;
+    uint256 public activeRewardWeight;
+    uint256 public activeRewardNumerator;
+    uint256 public activeRewardCheckpoint;
     event DeferredRewardRecorded(uint256 indexed stakeId, address indexed staker, uint256 amount);
     event DeferredRewardClaimed(address indexed staker, uint256 amount);
 
@@ -118,6 +128,7 @@ uint256 public totalPools;
     error PoolAlreadyInDesiredState();
     error RewardRateUnchanged();
     error PoolAlreadyExists();
+    error TokenTransferMismatch();
 
 
         /// -----------------------------------------------------------------------
@@ -187,6 +198,7 @@ event PoolRewardRateUpdated(
     revert InvalidToken();
 
         lgcToken = token;
+        activeRewardCheckpoint = block.timestamp;
 
         stakingPools[0] = StakingPool({
     id: 0,
@@ -290,7 +302,7 @@ function createPool(
 {
     uint256 poolId = totalPools;
 
-    if (rewardRate == 0)
+    if (rewardRate == 0 || rewardRate > 10_000)
     revert InvalidRewardRate();
 
 
@@ -399,11 +411,45 @@ function getPoolName(
     );
 }
 
-/// @notice Whether funded rewards cover already-recorded deferred reward liabilities.
-/// @dev A funded pool of zero is not considered healthy. This does NOT include
-///      accrued rewards on active stakes, and is not a complete solvency test.
+/// @notice Whether rewards cover deferred debt PLUS conservative active accrual.
+/// @dev Does not include future unearned rewards; not a full lifecycle solvency test.
 function rewardPoolHealthy() public view returns (bool) {
-    return rewardPool > 0 && rewardPool >= totalUnpaidRewards;
+    return rewardPool > 0 && rewardPool >= _totalAccruedLiability();
+}
+
+/// @notice Rewards already earned by active positions, conservatively rounded UP.
+/// @dev This is accrued liability only. It cannot predict future rewards.
+function pendingActiveRewardLiability() public view returns (uint256) {
+    uint256 numerator = activeRewardNumerator +
+        activeRewardWeight * (block.timestamp - activeRewardCheckpoint);
+    return numerator / REWARD_DENOMINATOR +
+        (numerator % REWARD_DENOMINATOR == 0 ? 0 : 1);
+}
+
+function _totalAccruedLiability() internal view returns (uint256) {
+    return totalUnpaidRewards + pendingActiveRewardLiability();
+}
+
+/// @notice Includes both recorded exited-stake debt and accrued active-stake rewards.
+/// @dev Excludes FUTURE unearned rewards and assumes exact-transfer LGC semantics.
+function accruedRewardCoverage() external view returns (
+    uint256 fundedRewards,
+    uint256 recordedDeferredDebt,
+    uint256 estimatedActiveDebt,
+    uint256 totalAccruedDebt,
+    uint256 fundingShortfall
+) {
+    fundedRewards = rewardPool;
+    recordedDeferredDebt = totalUnpaidRewards;
+    estimatedActiveDebt = pendingActiveRewardLiability();
+    totalAccruedDebt = recordedDeferredDebt + estimatedActiveDebt;
+    fundingShortfall = totalAccruedDebt > fundedRewards ? totalAccruedDebt - fundedRewards : 0;
+}
+
+function _checkpointActiveRewards() internal {
+    activeRewardNumerator += activeRewardWeight *
+        (block.timestamp - activeRewardCheckpoint);
+    activeRewardCheckpoint = block.timestamp;
 }
 
 /// @notice Reports recorded deferred-reward coverage (excludes live accrual).
@@ -492,7 +538,7 @@ function updatePoolRewardRate(
     if (!poolExists(poolId))
         revert InvalidPool();
 
-    if (newRate == 0)
+    if (newRate == 0 || newRate > 10_000)
         revert InvalidRewardRate();
 
     if (
@@ -507,6 +553,10 @@ function updatePoolRewardRate(
 
     stakingPools[poolId]
         .annualRewardRate = newRate;
+    if (poolId == 0) {
+        annualRewardRate = newRate;
+        emit RewardRateUpdated(oldRate, newRate);
+    }
 
     emit PoolRewardRateUpdated(
         poolId,
@@ -529,11 +579,10 @@ function updatePoolRewardRate(
         if (amount == 0)
             revert InvalidAmount();
 
-        lgcToken.safeTransferFrom(
-            msg.sender,
-            address(this),
-            amount
-        );
+        uint256 balanceBefore = lgcToken.balanceOf(address(this));
+        lgcToken.safeTransferFrom(msg.sender, address(this), amount);
+        if (lgcToken.balanceOf(address(this)) - balanceBefore != amount)
+            revert TokenTransferMismatch();
 
         rewardPool += amount;
        totalRewardsFunded += amount;
@@ -549,7 +598,7 @@ function updatePoolRewardRate(
     external
     onlyOwner
 {
-    if (newRate == 0)
+    if (newRate == 0 || newRate > 10_000)
         revert InvalidRewardRate();
 
     if (annualRewardRate == newRate)
@@ -559,7 +608,9 @@ function updatePoolRewardRate(
         annualRewardRate;
 
     annualRewardRate = newRate;
+    stakingPools[0].annualRewardRate = newRate;
 
+    emit PoolRewardRateUpdated(0, oldRate, newRate);
     emit RewardRateUpdated(
         oldRate,
         newRate
@@ -689,11 +740,14 @@ if (userStake.active) {
         if (amount == 0)
             revert InvalidAmount();
 
-        lgcToken.safeTransferFrom(
-            msg.sender,
-            address(this),
-            amount
-        );
+        uint256 balanceBefore = lgcToken.balanceOf(address(this));
+        lgcToken.safeTransferFrom(msg.sender, address(this), amount);
+        if (lgcToken.balanceOf(address(this)) - balanceBefore != amount)
+            revert TokenTransferMismatch();
+
+        _checkpointActiveRewards();
+        uint256 stakeRate = stakingPools[poolId].annualRewardRate;
+        activeRewardWeight += amount * stakeRate;
 
         uint256 stakeId = totalStakePositions;
        uint64 currentTime = uint64(block.timestamp);
@@ -705,7 +759,8 @@ if (userStake.active) {
     amount: amount,
     startTime: currentTime,
     lastClaimTime: currentTime,
-    active: true
+    active: true,
+    rewardRateBps: stakeRate
 
 });
 
@@ -770,8 +825,7 @@ function stakeInPool(
             block.timestamp -
             uint256(userStake.lastClaimTime);
 
-       uint256 rewardRate =
-    getPoolRewardRate(userStake.poolId);
+       uint256 rewardRate = userStake.rewardRateBps;
 
 uint256 reward =
     (
@@ -822,8 +876,15 @@ uint256 reward =
     if (reward == 0)
         revert NothingToClaim();
 
-    if (reward > rewardPool || rewardPool - reward < totalUnpaidRewards)
+    // Every active accrued liability and deferred debt must be fully backed
+    // BEFORE a claimant receives any funds.
+    if (rewardPool < _totalAccruedLiability())
         revert InsufficientRewardPool();
+
+    _checkpointActiveRewards();
+    uint256 positionWeight = userStake.amount * userStake.rewardRateBps;
+    activeRewardNumerator -= positionWeight *
+        (block.timestamp - uint256(userStake.lastClaimTime));
 
     uint64 currentTime =
     uint64(block.timestamp);
@@ -860,13 +921,17 @@ function claimRewards(
 
         /// @notice Unstakes LGC and automatically claims pending rewards.
     /// @param stakeId The staking position ID.
-    function unstake(
-    uint256 stakeId
-)
-    external
-    whenNotPaused
-      nonReentrant
-{
+    function unstake(uint256 stakeId) external whenNotPaused nonReentrant {
+        _unstake(stakeId);
+    }
+
+    /// @notice Exit an unlocked position while paused, without paying rewards.
+    /// @dev Honors the original lock and records rewards as deferred debt.
+    function emergencyUnstake(uint256 stakeId) external whenPaused nonReentrant {
+        _unstake(stakeId);
+    }
+
+    function _unstake(uint256 stakeId) internal {
         StakeInfo storage userStake =
             stakes[stakeId];
 
@@ -882,6 +947,11 @@ function claimRewards(
         // Automatically claim any pending rewards
         // Calculate once, before closing the position. Principal never depends on reward liquidity.
         uint256 accrued = calculateRewards(stakeId);
+        _checkpointActiveRewards();
+        uint256 positionWeight = userStake.amount * userStake.rewardRateBps;
+        activeRewardNumerator -= positionWeight *
+            (block.timestamp - uint256(userStake.lastClaimTime));
+        activeRewardWeight -= positionWeight;
         if (accrued != 0) {
             unpaidRewards[msg.sender] += accrued;
             totalUnpaidRewards += accrued;
@@ -913,17 +983,14 @@ function claimRewards(
         );
     }
 
-    /// @notice Claim rewards deferred when an unlocked stake was withdrawn.
-    /// @dev A claimant cannot consume principal: rewardPool tracks only funded reward liquidity.
-    /// @notice Claim deferred rewards only after ALL recorded deferred debt is funded.
-    /// @dev Strict all-recorded-debt coverage prevents early creditors from draining partial funding.
-    /// @dev Accruing rewards on active positions are NOT in totalUnpaidRewards; this is not full solvency.
+    /// @notice Claim recorded deferred rewards when ALL currently accrued debts are funded.
+    /// @dev Covers deferred and active accrued obligations; future accrual is not guaranteed.
     function claimDeferredRewards() external whenNotPaused nonReentrant {
         uint256 owed = unpaidRewards[msg.sender];
         if (owed == 0) revert NothingToClaim();
 
         // No claimant may consume a partially funded reserve, irrespective of call order.
-        if (rewardPool < totalUnpaidRewards) revert InsufficientRewardPool();
+        if (rewardPool < _totalAccruedLiability()) revert InsufficientRewardPool();
 
         // Effects first, token transfer last. Entire claimant debt is discharged atomically.
         unpaidRewards[msg.sender] = 0;
