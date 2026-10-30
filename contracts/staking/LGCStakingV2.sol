@@ -136,6 +136,7 @@ uint256 public totalPools;
     error LockExceedsRewardTerm();
     error StakingPermanentlyClosed();
     error OutstandingStakingObligations();
+    error UnsafeOwnershipRenunciation();
 
 
         /// -----------------------------------------------------------------------
@@ -674,6 +675,24 @@ function setPoolActive(
         lgcToken.safeTransfer(msg.sender, amount);
         emit UnusedRewardFundsRecovered(msg.sender, amount);
     }
+
+    /// @notice Permanently renounce ownership only after all staking
+    /// obligations are settled and all accounted reward funding is recovered.
+    /// @dev Prevents the contract from being left paused with unclaimable debt
+    /// or having owner-only recoverable funding stranded after closeout.
+    function renounceOwnership() public override onlyOwner {
+        if (
+            !stakingClosed ||
+            rewardPool != 0 ||
+            totalStaked != 0 ||
+            activeStakers != 0 ||
+            totalRewardCommitments != 0 ||
+            totalUnpaidRewards != 0
+        ) revert UnsafeOwnershipRenunciation();
+
+        super.renounceOwnership();
+    }
+
 
     /// -----------------------------------------------------------------------
     /// View Functions

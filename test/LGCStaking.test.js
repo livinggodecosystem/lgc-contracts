@@ -1748,6 +1748,41 @@ it("V2 preserves deliberate ownership transfer and restricts later recovery to t
   expect(await lgc.balanceOf(bob.address)).to.equal(before + ethers.parseEther("6"));
 });
 
+it("V2 blocks ownership renunciation with paused deferred creditors", async function () {
+  const { v2, address } = await deployBudgetV2();
+  const principal = ethers.parseEther("100");
+  const funding = ethers.parseEther("20");
+
+  await prepareV2Staker(address, alice, principal);
+  await fundV2(v2, address, funding);
+  await v2.connect(alice).stake(principal);
+  await time.increase(24 * 60 * 60);
+  await v2.pause();
+  await v2.connect(alice).emergencyUnstake(0);
+
+  expect(await v2.totalUnpaidRewards()).to.be.gt(0n);
+  expect(await v2.paused()).to.equal(true);
+  await expect(v2.renounceOwnership()).to.be.revertedWithCustomError(
+    v2, "UnsafeOwnershipRenunciation"
+  );
+
+  await v2.unpause();
+  await v2.connect(alice).claimDeferredRewards();
+  expect(await v2.totalUnpaidRewards()).to.equal(0n);
+});
+
+it("V2 blocks renunciation while unused reward funding remains", async function () {
+  const { v2, address } = await deployBudgetV2();
+  await fundV2(v2, address, ethers.parseEther("10"));
+  await v2.recoverUnusedRewardFunds(ethers.parseEther("4"));
+
+  expect(await v2.stakingClosed()).to.equal(true);
+  expect(await v2.rewardPool()).to.equal(ethers.parseEther("6"));
+  await expect(v2.renounceOwnership()).to.be.revertedWithCustomError(
+    v2, "UnsafeOwnershipRenunciation"
+  );
+});
+
 it("V2 preserves the owner's optional MANUAL renunciation after closeout", async function () {
   const { v2, address } = await deployBudgetV2();
   await fundV2(v2, address, ethers.parseEther("1"));
