@@ -99,9 +99,11 @@ struct RewardPoolStats {
     uint256 public totalRewardCommitments;
     mapping(uint256 => uint256) public remainingPositionCommitment;
 
-    /// @notice Permanent closeout begins with the first owner recovery of unused rewards.
+    /// @notice Irreversibly blocks new stakes and reward funding; existing obligations
+    /// remain payable, and all participants retain their own withdrawal rights.
     bool public stakingClosed;
     uint256 public totalRewardsRecovered;
+    event StakingClosed(address indexed owner);
     event DeferredRewardRecorded(uint256 indexed stakeId, address indexed staker, uint256 amount);
     event DeferredRewardClaimed(address indexed staker, uint256 amount);
     event UnusedRewardFundsRecovered(address indexed owner, uint256 amount);
@@ -135,7 +137,6 @@ uint256 public totalPools;
     error TokenTransferMismatch();
     error LockExceedsRewardTerm();
     error StakingPermanentlyClosed();
-    error OutstandingStakingObligations();
     error UnsafeOwnershipRenunciation();
 
 
@@ -650,34 +651,51 @@ function setPoolActive(
     );
 }
 
-    /// @notice During FINAL closeout, return only UNUSED accounted reward funding.
-    /// @dev The first successful recovery permanently blocks new stakes and funding.
-    ///      Outstanding principal, active commitments, or deferred rewards prevent recovery.
-    ///      Rewards are sent ONLY to msg.sender (the authorized owner), never an arbitrary recipient.
-    ///      Direct unsolicited token transfers are NOT part of the recoverable rewardPool.
-    ///      Owner transfer and renunciation functionality are intentionally unchanged.
-    /// @param amount Amount of uncommitted LGC funding to return to the owner.
+    /// @notice Permanently end NEW staking admissions without seizing existing stakes.
+    /// @dev Existing stakes can still claim and withdraw; deferred creditors can
+    /// still collect after unpausing. Owner remains accountable for pause control.
+    /// No reward funding is required to close even if rewardPool is zero.
+    function closeStaking() external onlyOwner {
+        if (stakingClosed) revert StakingPermanentlyClosed();
+        stakingClosed = true;
+        emit StakingClosed(msg.sender);
+    }
+
+    /// @notice Return ONLY uncommitted, accounted reward funding to the owner.
+    /// @dev Active principal and the FULL remaining reward commitments are always
+    /// reserved. A dormant or dust stake cannot freeze genuinely unused funding.
+    /// The first recovery permanently blocks new stakes and reward funding; a
+    /// separate closeStaking() also supports zero-reward closure. Existing users
+    /// can still claim and unstake. Directly transferred tokens are NOT included.
     function recoverUnusedRewardFunds(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert InvalidAmount();
         if (
-            totalStaked != 0 ||
-            activeStakers != 0 ||
-            totalRewardCommitments != 0 ||
-            totalUnpaidRewards != 0
-        ) revert OutstandingStakingObligations();
-        if (amount > rewardPool || lgcToken.balanceOf(address(this)) < rewardPool)
+            rewardPool < totalRewardCommitments ||
+            amount > rewardPool - totalRewardCommitments
+        ) revert InsufficientRewardPool();
+
+        // The ERC-20 balance must cover ALL staked principal PLUS the entire
+        // accounted reward pool before any recovery can be attempted.
+        if (lgcToken.balanceOf(address(this)) < totalStaked + rewardPool)
             revert InsufficientRewardPool();
 
-        // Effects before interaction; the first recovery permanently closes staking.
-        stakingClosed = true;
+        // Effects before interaction; neither active nor deferred rewards change.
+        if (!stakingClosed) {
+            stakingClosed = true;
+            emit StakingClosed(msg.sender);
+        }
         rewardPool -= amount;
         totalRewardsRecovered += amount;
         lgcToken.safeTransfer(msg.sender, amount);
+
+        // Fail atomically if an unusual token transfer consumed other collateral.
+        if (lgcToken.balanceOf(address(this)) < totalStaked + rewardPool)
+            revert TokenTransferMismatch();
         emit UnusedRewardFundsRecovered(msg.sender, amount);
     }
 
-    /// @notice Permanently renounce ownership only after all staking
-    /// obligations are settled and all accounted reward funding is recovered.
+    /// @notice Permanently renounce ownership only after every principal and
+    /// reward obligation is settled and all accounted reward funding recovered.
     /// @dev Prevents the contract from being left paused with unclaimable debt
     /// or having owner-only recoverable funding stranded after closeout.
     function renounceOwnership() public override onlyOwner {
