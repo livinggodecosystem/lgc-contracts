@@ -37,5 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+     
       - name: Run complete Hardhat tests
+        env:
+          BSC_RPC_URL: "http://127.0.0.1:8545"
         run: npx --no-install hardhat test --network hardhat
+
