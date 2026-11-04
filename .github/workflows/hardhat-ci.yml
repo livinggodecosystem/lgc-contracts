@@ -1,0 +1,45 @@
+
+name: LGC Hardhat Regression
+
+on:
+  pull_request:
+    branches:
+      - audit/staking-v2-base
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+  push:
+    branches:
+      - audit/staking-v2-base
+
+permissions:
+  contents: read
+
+jobs:
+  hardhat-tests:
+    name: Hardhat Full Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout contracts
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+     
+      - name: Run complete Hardhat tests
+        env:
+          BSC_RPC_URL: "http://127.0.0.1:8545"
+        run: npx --no-install hardhat test --network hardhat
+
